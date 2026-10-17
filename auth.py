@@ -1,14 +1,16 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
+import pandas as pd
 
-# Base de datos temporal de usuarios con sus respectivos roles y permisos
-USUARIOS = {
-    "admin": {"password": "reyes2026", "rol": "Administrador"},
-    "capataz": {"password": "obra2026", "rol": "Capataz"},
-    "juan": {"password": "constructora123", "rol": "Capataz"}
-}
+def obtener_conexion():
+    return st.connection("gsheets", type=GSheetsConnection)
+
+def cargar_usuarios():
+    conn = obtener_conexion()
+    df = conn.read(worksheet="Usuarios", ttl=0)
+    return df
 
 def verificar_autenticacion():
-    """Verifica si el usuario está autenticado y gestiona el formulario de login."""
     if "autenticado" not in st.session_state:
         st.session_state["autenticado"] = False
     if "usuario_actual" not in st.session_state:
@@ -28,20 +30,44 @@ def verificar_autenticacion():
                 submit_login = st.form_submit_button("Ingresar")
 
                 if submit_login:
-                    if usuario_input in USUARIOS and USUARIOS[usuario_input]["password"] == password_input:
-                        st.session_state["autenticado"] = True
-                        st.session_state["usuario_actual"] = usuario_input
-                        st.session_state["rol_actual"] = USUARIOS[usuario_input]["rol"]
-                        st.success(f"¡Bienvenido {usuario_input}! Cargando panel...")
-                        st.rerun()
-                    else:
-                        st.error("⚠️ Usuario o contraseña incorrectos.")
+                    try:
+                        df_usuarios = cargar_usuarios()
+                        usuario_match = df_usuarios[
+                            (df_usuarios['usuario'].astype(str) == usuario_input) & 
+                            (df_usuarios['password'].astype(str) == password_input)
+                        ]
+                        
+                        if not usuario_match.empty:
+                            st.session_state["autenticado"] = True
+                            st.session_state["usuario_actual"] = usuario_input
+                            st.session_state["rol_actual"] = usuario_match.iloc[0]["rol"]
+                            st.success(f"¡Bienvenido {usuario_input}! Cargando panel...")
+                            st.rerun()
+                        else:
+                            st.error("⚠️ Usuario o contraseña incorrectos.")
+                    except Exception as e:
+                        st.error(f"Error al conectar con la base de datos: {e}")
         st.stop()
 
-def registrar_usuario(nuevo_usuario, nueva_clave, nuevo_rol):
-    """Permite al Administrador dar de alta un nuevo usuario en el diccionario."""
-    if nuevo_usuario in USUARIOS:
-        return False, "El nombre de usuario ya existe."
-    
-    USUARIOS[nuevo_usuario] = {"password": nueva_clave, "rol": nuevo_rol}
-    return True, f"Usuario '{nuevo_usuario}' registrado con éxito como {nuevo_rol}."
+def registrar_usuario(dni, apellido, nombre, nuevo_usuario, nueva_clave, nuevo_rol):
+    try:
+        conn = obtener_conexion()
+        df_usuarios = cargar_usuarios()
+        
+        if str(nuevo_usuario) in df_usuarios['usuario'].astype(str).values:
+            return False, "El nombre de usuario ya existe."
+        
+        nuevo_df = pd.DataFrame([{
+            "DNI": dni,
+            "apellido": apellido,
+            "nombre": nombre,
+            "usuario": nuevo_usuario,
+            "password": nueva_clave,
+            "rol": nuevo_rol
+        }])
+        
+        df_actualizado = pd.concat([df_usuarios, nuevo_df], ignore_index=True)
+        conn.update(worksheet="Usuarios", data=df_actualizado)
+        return True, f"Usuario '{nuevo_usuario}' registrado con éxito."
+    except Exception as e:
+        return False, f"Error al guardar en Google Sheets: {e}"
