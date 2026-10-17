@@ -2,8 +2,11 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
+# Reemplaza la URL de ejemplo por el enlace completo de tu planilla de Google Sheets
+URL_SHEET = "https://docs.google.com/spreadsheets/d/TU_URL_COMPLETA_AQUI/edit"
+
 def obtener_conexion():
-    return st.connection("gsheets", type=GSheetsConnection)
+    return st.connection("gsheets", type=GSheetsConnection, spreadsheet=URL_SHEET)
 
 def cargar_usuarios():
     conn = obtener_conexion()
