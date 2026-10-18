@@ -49,8 +49,8 @@ def verificar_autenticacion():
     """
     if "autenticado" not in st.session_state:
         st.session_state["autenticado"] = False
-        st.session_state["usuario"] = None
-        st.session_state["rol"] = None
+        st.session_state["usuario_actual"] = None
+        st.session_state["rol_actual"] = None
 
     if not st.session_state["autenticado"]:
         st.subheader("Acceso al Sistema de Control")
@@ -64,8 +64,9 @@ def verificar_autenticacion():
                 user_data = autenticar_usuario(usuario_input, password_input)
                 if user_data:
                     st.session_state["autenticado"] = True
-                    st.session_state["usuario"] = user_data.get("usuario")
-                    st.session_state["rol"] = user_data.get("rol", "usuario")
+                    # Asignamos las claves que espera app.py
+                    st.session_state["usuario_actual"] = user_data.get("usuario")
+                    st.session_state["rol_actual"] = user_data.get("rol", "usuario")
                     st.success("¡Acceso exitoso!")
                     st.rerun()
                 else:
