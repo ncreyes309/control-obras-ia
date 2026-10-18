@@ -2,7 +2,6 @@ import streamlit as st
 from streamlit-gsheets import GSheetsConnection
 import pandas as pd
 
-# Reemplaza la URL de ejemplo por el enlace completo de tu planilla de Google Sheets
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1kLefq4buQ1hkNfi0WDxrbNKqcDWIL4mdj98Awfcaf64/edit?usp=sharing"
 def obtener_conexion():
     return st.connection("gsheets", type=GSheetsConnection, spreadsheet=URL_SHEET)
