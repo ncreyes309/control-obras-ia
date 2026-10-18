@@ -2,7 +2,6 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1kLefq4buQ1hkNfi0WDxrbNKqcDWIL4mdj98Awfcaf64/edit?usp=drive_link"
-
 def obtener_conexion():
     """
     Inicializa la conexión con Google Sheets.
@@ -15,11 +14,18 @@ def cargar_usuarios():
     """
     try:
         conn = obtener_conexion()
+        # Intentamos leer la pestaña 'Usuarios'
         df = conn.read(spreadsheet=URL_SHEET, worksheet="Usuarios", ttl=0)
         return df
     except Exception as e:
-        st.error(f"Error al conectar con la base de datos: {e}")
-        return pd.DataFrame()
+        # Si falla, intentamos leer sin especificar worksheet por si la hoja principal es la de usuarios
+        try:
+            conn = obtener_conexion()
+            df = conn.read(spreadsheet=URL_SHEET, ttl=0)
+            return df
+        except Exception as e2:
+            st.error(f"Error al conectar con la base de datos: {e2}")
+            return pd.DataFrame()
 
 def autenticar_usuario(usuario, contrasena):
     """
@@ -64,7 +70,6 @@ def verificar_autenticacion():
                 user_data = autenticar_usuario(usuario_input, password_input)
                 if user_data:
                     st.session_state["autenticado"] = True
-                    # Asignamos las claves que espera app.py
                     st.session_state["usuario_actual"] = user_data.get("usuario")
                     st.session_state["rol_actual"] = user_data.get("rol", "usuario")
                     st.success("¡Acceso exitoso!")
