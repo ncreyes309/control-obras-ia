@@ -1,5 +1,5 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
+from streamlit-gsheets import GSheetsConnection
 import pandas as pd
 
 # Reemplaza la URL de ejemplo por el enlace completo de tu planilla de Google Sheets
