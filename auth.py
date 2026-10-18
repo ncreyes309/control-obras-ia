@@ -4,10 +4,8 @@ import pandas as pd
 
 # Reemplaza la URL de ejemplo por el enlace completo de tu planilla de Google Sheets
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1kLefq4buQ1hkNfi0WDxrbNKqcDWIL4mdj98Awfcaf64/edit?gid=0#gid=0"
-
 def obtener_conexion():
     return st.connection("gsheets", type=GSheetsConnection, spreadsheet=URL_SHEET)
-
 def cargar_usuarios():
     conn = obtener_conexion()
     df = conn.read(worksheet="Usuarios", ttl=0)
