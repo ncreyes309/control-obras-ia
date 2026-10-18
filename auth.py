@@ -15,7 +15,6 @@ def cargar_usuarios():
     """
     try:
         conn = obtener_conexion()
-        # Se le pasa el parámetro spreadsheet directamente al leer los datos
         df = conn.read(spreadsheet=URL_SHEET, worksheet="Usuarios", ttl=0)
         return df
     except Exception as e:
@@ -30,19 +29,47 @@ def autenticar_usuario(usuario, contrasena):
     if df.empty:
         return None
     
-    # Normalización de los nombres de columnas (minusculas y sin espacios)
+    # Normalización de los nombres de columnas
     df.columns = [str(col).strip().lower() for col in df.columns]
     
-    # Búsqueda del usuario y contraseña
     usuario_ingresado = str(usuario).strip()
     contrasena_ingresada = str(contrasena).strip()
     
-    # Filtrar credenciales en el DataFrame
     coincidencias = df[(df['usuario'].astype(str).str.strip() == usuario_ingresado) & 
                        (df['password'].astype(str).str.strip() == contrasena_ingresada)]
     
     if not coincidencias.empty:
-        # Retorna la primera fila como diccionario si la autenticación es exitosa
         return coincidencias.iloc[0].to_dict()
     
     return None
+
+def verificar_autenticacion():
+    """
+    Gestiona la visualización del formulario de login y la sesión en Streamlit.
+    """
+    if "autenticado" not in st.session_state:
+        st.session_state["autenticado"] = False
+        st.session_state["usuario"] = None
+        st.session_state["rol"] = None
+
+    if not st.session_state["autenticado"]:
+        st.subheader("Acceso al Sistema de Control")
+        
+        with st.form("form_login"):
+            usuario_input = st.text_input("Usuario")
+            password_input = st.text_input("Contraseña", type="password")
+            submit = st.form_submit_button("Ingresar")
+            
+            if submit:
+                user_data = autenticar_usuario(usuario_input, password_input)
+                if user_data:
+                    st.session_state["autenticado"] = True
+                    st.session_state["usuario"] = user_data.get("usuario")
+                    st.session_state["rol"] = user_data.get("rol", "usuario")
+                    st.success("¡Acceso exitoso!")
+                    st.rerun()
+                else:
+                    st.error("Usuario o contraseña incorrectos.")
+        return False
+    
+    return True
