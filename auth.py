@@ -2,9 +2,6 @@ import streamlit as st
 from st_gsheets_connection import GSheetsConnection
 import pandas as pd
 
-
-URL_SHEET = "https://docs.google.com/spreadsheets/d/1kLefq4buQ1hkNfi0WDxrbNKqcDWIL4mdj98Awfcaf64/edit?usp=sharing"
-
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1kLefq4buQ1hkNfi0WDxrbNKqcDWIL4mdj98Awfcaf64/edit?usp=drive_link"
 def obtener_conexion():
     return st.connection("gsheets", type=GSheetsConnection, spreadsheet=URL_SHEET)
