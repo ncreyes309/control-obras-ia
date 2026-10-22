@@ -1,7 +1,8 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-URL_SHEET = "https://docs.google.com/spreadsheets/d/1kLefq4buQ1hkNfi0WDxrbNKqcDWIL4mdj98Awfcaf64/edit?usp=drive_link"
+#URL_SHEET = "https://docs.google.com/spreadsheets/d/1kLefq4buQ1hkNfi0WDxrbNKqcDWIL4mdj98Awfcaf64/edit?usp=drive_link"
+URL_SHEET = "https://docs.google.com/spreadsheets/d/1Dvb10YHHL6XBO9ULn0Pc9DQ3QgaGhmqgiRfV6abxc74/edit?usp=sharing"
 def obtener_conexion():
     """
     Inicializa la conexión con Google Sheets.
