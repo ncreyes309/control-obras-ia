@@ -1,82 +1,68 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-#URL_SHEET = "https://docs.google.com/spreadsheets/d/1kLefq4buQ1hkNfi0WDxrbNKqcDWIL4mdj98Awfcaf64/edit?usp=drive_link"
-URL_SHEET = "https://docs.google.com/spreadsheets/d/1Dvb10YHHL6XBO9ULn0Pc9DQ3QgaGhmqgiRfV6abxc74/edit?usp=sharing"
-def obtener_conexion():
-    """
-    Inicializa la conexión con Google Sheets.
-    """
-    return st.connection("gsheets", type=GSheetsConnection)
+from streamlit_gsheets import GSheetsConnection
 
 def cargar_usuarios():
-    """
-    Lee la pestaña 'Usuarios' de la planilla de Google Sheets.
-    """
-    try:
-        conn = obtener_conexion()
-        # Intentamos leer la pestaña 'Usuarios'
-        df = conn.read(spreadsheet=URL_SHEET, worksheet="Usuarios", ttl=0)
-        return df
-    except Exception as e:
-        # Si falla, intentamos leer sin especificar worksheet por si la hoja principal es la de usuarios
-        try:
-            conn = obtener_conexion()
-            df = conn.read(spreadsheet=URL_SHEET, ttl=0)
-            return df
-        except Exception as e2:
-            st.error(f"Error al conectar con la base de datos: {e2}")
-            return pd.DataFrame()
-
-def autenticar_usuario(usuario, contrasena):
-    """
-    Verifica si las credenciales ingresadas coinciden con algún registro.
-    """
-    df = cargar_usuarios()
-    if df.empty:
-        return None
-    
-    # Normalización de los nombres de columnas
-    df.columns = [str(col).strip().lower() for col in df.columns]
-    
-    usuario_ingresado = str(usuario).strip()
-    contrasena_ingresada = str(contrasena).strip()
-    
-    coincidencias = df[(df['usuario'].astype(str).str.strip() == usuario_ingresado) & 
-                       (df['password'].astype(str).str.strip() == contrasena_ingresada)]
-    
-    if not coincidencias.empty:
-        return coincidencias.iloc[0].to_dict()
-    
-    return None
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    df = conn.read(worksheet="Usuarios", ttl=0)
+    return df
 
 def verificar_autenticacion():
-    """
-    Gestiona la visualización del formulario de login y la sesión en Streamlit.
-    """
     if "autenticado" not in st.session_state:
         st.session_state["autenticado"] = False
-        st.session_state["usuario_actual"] = None
-        st.session_state["rol_actual"] = None
+        st.session_state["usuario_actual"] = ""
+        st.session_state["rol_actual"] = ""
 
     if not st.session_state["autenticado"]:
-        st.subheader("Acceso al Sistema de Control")
-        
+        st.subheader("🔐 Acceso al Sistema de Control")
         with st.form("form_login"):
             usuario_input = st.text_input("Usuario")
             password_input = st.text_input("Contraseña", type="password")
-            submit = st.form_submit_button("Ingresar")
-            
-            if submit:
-                user_data = autenticar_usuario(usuario_input, password_input)
-                if user_data:
-                    st.session_state["autenticado"] = True
-                    st.session_state["usuario_actual"] = user_data.get("usuario")
-                    st.session_state["rol_actual"] = user_data.get("rol", "usuario")
-                    st.success("¡Acceso exitoso!")
-                    st.rerun()
-                else:
-                    st.error("Usuario o contraseña incorrectos.")
+            submit_login = st.form_submit_button("Ingresar")
+
+            if submit_login:
+                try:
+                    df_usuarios = cargar_usuarios()
+                    df_usuarios.columns = df_usuarios.columns.str.strip().str.lower()
+                    
+                    usuario_match = df_usuarios[df_usuarios["usuario"] == usuario_input]
+                    
+                    if not usuario_match.empty:
+                        pass_real = str(usuario_match.iloc[0]["password"])
+                        if pass_real == password_input:
+                            st.session_state["autenticado"] = True
+                            st.session_state["usuario_actual"] = usuario_match.iloc[0]["usuario"]
+                            st.session_state["rol_actual"] = usuario_match.iloc[0]["rol"]
+                            st.success("¡Acceso exitoso!")
+                            st.rerun()
+                        else:
+                            st.error("Contraseña incorrecta.")
+                    else:
+                        st.error("El usuario no existe.")
+                except Exception as e:
+                    st.error(f"Error al conectar con la base de datos de usuarios: {e}")
         return False
-    
     return True
+
+def registrar_usuario(dni, apellido, nombre, usuario, password, rol):
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df_actual = conn.read(worksheet="Usuarios", ttl=0)
+        
+        if not df_actual[df_actual["usuario"] == usuario].empty:
+            return False, "El nombre de usuario ya está registrado."
+        
+        nuevo_registro = pd.DataFrame([{
+            "DNI": dni,
+            "apellido": apellido,
+            "nombre": nombre,
+            "usuario": usuario,
+            "password": password,
+            "rol": rol
+        }])
+        
+        df_actualizado = pd.concat([df_actual, nuevo_registro], ignore_index=True)
+        conn.update(worksheet="Usuarios", data=df_actualizado)
+        return True, "Usuario registrado con éxito en Google Sheets."
+    except Exception as e:
+        return False, str(e)
