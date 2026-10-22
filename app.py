@@ -11,8 +11,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# Ejecutamos la verificación de acceso y roles
-auth.verificar_autenticacion()
+# 1. Ejecutamos la verificación de acceso y roles
+autenticado = auth.verificar_autenticacion()
+
+# 2. AQUÍ VA EL CÓDIGO SUGERIDO PARA DETENER LA EJECUCIÓN SI NO ESTÁ AUTENTICADO
+if not autenticado:
+    st.stop()
 
 # ---------------------------------------------------------
 # BARRA LATERAL (SIDEBAR) - NAVEGACIÓN SEGÚN ROL
