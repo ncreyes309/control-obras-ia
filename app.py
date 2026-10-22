@@ -11,8 +11,8 @@ st.set_page_config(
     layout="wide"
 )
 
-# Ejecutamos la verificación de acceso y roles
-auth.verificar_autenticacion()
+# 1. Ejecutamos la verificación de acceso y roles
+autenticado = auth.verificar_autenticacion()
 
 # ---------------------------------------------------------
 # BARRA LATERAL (SIDEBAR) - NAVEGACIÓN SEGÚN ROL
