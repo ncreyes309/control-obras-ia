@@ -2,7 +2,7 @@ import streamlit as st
 import auth
 
 # Importamos los submódulos de la carpeta 'modulos'
-from modulos import usuarios, reportes, resumen, horas
+from modulos import avances, horas, reportes, resumen, usuarios
 
 # Configuración inicial de la página
 st.set_page_config(
@@ -19,20 +19,27 @@ if not autenticado:
 
 rol = st.session_state["rol_actual"]
 
-# 2. Barra lateral de navegación
+# 2. Permisos por rol: menú -> (módulo, roles habilitados)
+ROLES_CARGA = ("Administrador", "Director de Obras", "Administrativo General", "Capataz")
+ROLES_GESTION = ("Administrador", "Gerente", "Director de Obras")
+
+PAGINAS = {
+    "🕒 Carga de Horas": (horas.mostrar_modulo, ROLES_CARGA),
+    "📝 Avances y Novedades": (avances.mostrar_modulo, ROLES_CARGA),
+    "📨 Reporte Diario": (reportes.mostrar_modulo, ROLES_GESTION),
+    "📊 Resumen y Control": (resumen.mostrar_modulo, ROLES_GESTION),
+    "👤 Gestión de Usuarios": (usuarios.mostrar_modulo, ("Administrador",)),
+}
+opciones_menu = [nombre for nombre, (_, roles) in PAGINAS.items() if rol in roles]
+
+# 3. Barra lateral
 st.sidebar.title("🏗️ Reyes Juan SRL")
 st.sidebar.caption(f"Usuario: **{st.session_state['usuario_actual']}** ({rol})")
 
-# Menú por rol
-opciones_menu = ["🕒 Carga de Horas", "⏱️ Carga de Horas y Reportes IA"]
-
-if rol in ("Administrador", "Gerente"):
-    opciones_menu.append("📊 Resumen y Control")
-
-if rol == "Administrador":
-    opciones_menu.append("👤 Gestión de Usuarios")
-
-menu = st.sidebar.radio("Navegación", opciones_menu)
+if opciones_menu:
+    menu = st.sidebar.radio("Navegación", opciones_menu)
+else:
+    menu = None
 
 st.sidebar.markdown("---")
 
@@ -51,15 +58,8 @@ if st.sidebar.button("🚪 Cerrar Sesión"):
     st.session_state["rol_actual"] = ""
     st.rerun()
 
-# 3. Enrutamiento dinámico según la opción seleccionada
-if menu == "🕒 Carga de Horas":
-    horas.mostrar_modulo()
-
-elif menu == "⏱️ Carga de Horas y Reportes IA":
-    reportes.mostrar_modulo()
-
-elif menu == "📊 Resumen y Control":
-    resumen.mostrar_modulo()
-
-elif menu == "👤 Gestión de Usuarios":
-    usuarios.mostrar_modulo()
+# 4. Enrutamiento
+if menu is None:
+    st.info("Tu rol todavía no tiene módulos habilitados. Consultá con el administrador.")
+else:
+    PAGINAS[menu][0]()

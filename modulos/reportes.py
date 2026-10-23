@@ -1,87 +1,124 @@
-import os
+from datetime import datetime
+
+import pandas as pd
 import streamlit as st
 from openai import OpenAI
 
-def mostrar_modulo():
-    st.title("🏗️ Sistema de Reportes y Horas de Obra")
-    st.write("Panel para capataces y dirección de proyectos.")
+from modulos.avances import COLUMNAS_AVANCES, HOJA_AVANCES
+from modulos.horas import COLUMNAS_HORAS, HOJA_HORAS, HOJA_OBRAS, TZ, _leer
 
-    st.sidebar.markdown("---")
-    st.sidebar.header("Configuración de IA")
-    api_key = st.sidebar.text_input("OpenAI API Key", type="password")
+MODELO = "gpt-4o-mini"
 
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
+PROMPT = """Sos el asistente del gerente general de una empresa constructora en Argentina.
+Redactá el reporte de cierre del día {fecha} usando ÚNICAMENTE los datos de abajo.
+No inventes cifras, tareas ni novedades. Si algo no fue informado, decí "sin información".
 
-    st.subheader("📝 Nuevo Reporte de Avance")
+Estructura:
+1. Resumen general del día (2-3 líneas)
+2. Detalle por obra (avance %, tareas, horas trabajadas)
+3. Novedades y puntos de atención (faltantes, clima, inconvenientes, visitas)
+4. Obras sin reporte
 
-    with st.form("form_reporte"):
-        obra_nombre = st.selectbox("Seleccionar Obra", ["Edificio Los Álamos", "Centro Comercial Norte", "Residencial San Martín"])
-        porcentaje_avance = st.slider("Porcentaje de Avance Total (%)", 0.0, 100.0, 15.0)
-        
-        st.markdown("---")
-        st.markdown("🕒 **Registro de Horas de la Semana**")
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            operario_1 = st.text_input("Operario 1", "Juan Pérez")
-            horas_1 = st.number_input("Horas Op. 1", 0.0, 60.0, 40.0)
-        with col2:
-            operario_2 = st.text_input("Operario 2", "Carlos Gómez")
-            horas_2 = st.number_input("Horas Op. 2", 0.0, 60.0, 35.0)
-        with col3:
-            operario_3 = st.text_input("Operario 3", "Marcos Díaz")
-            horas_3 = st.number_input("Horas Op. 3", 0.0, 60.0, 40.0)
+Tono formal y conciso.
 
-        st.markdown("---")
-        notas_crudas = st.text_area("Notas informales del capataz (¿Qué pasó esta semana en obra?)", 
-                                    placeholder="Ej: Terminamos la loza del tercer piso, llovió el miércoles medio día...")
-        
-        enviado = st.form_submit_button("Generar y Enviar Reporte")
+DATOS:
+{datos}
+"""
 
-    if enviado:
-        if not os.environ.get("OPENAI_API_KEY"):
-            st.error("Por favor ingresa tu OpenAI API Key en la barra lateral.")
+
+# ---------- Lógica reutilizable (sin Streamlit): la va a usar también el envío automático ----------
+def construir_resumen(fecha_str: str, horas: pd.DataFrame, avances: pd.DataFrame, obras_activas: list[str]) -> str:
+    h = horas[horas["fecha"].astype(str).str[:10] == fecha_str]
+    a = avances[avances["fecha"].astype(str).str[:10] == fecha_str]
+
+    con_datos = sorted(set(h["obra"]) | set(a["obra"]))
+    bloques = []
+    for obra in con_datos:
+        ho, av = h[h["obra"] == obra], a[a["obra"] == obra]
+        lineas = [f"OBRA: {obra}"]
+        if ho.empty:
+            lineas.append("Horas: sin registros")
         else:
-            with st.spinner("Generando informe ejecutivo con IA..."):
-                try:
-                    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-                    
-                    lista_horas = [
-                        {"empleado_nombre": operario_1, "horas": horas_1},
-                        {"empleado_nombre": operario_2, "horas": horas_2},
-                        {"empleado_nombre": operario_3, "horas": horas_3}
-                    ]
-                    total_horas = sum(item['horas'] for item in lista_horas)
-                    detalle_horas = "\n".join([f"- {h['empleado_nombre']}: {h['horas']} hrs" for h in lista_horas])
-                    
-                    prompt = f"""
-                    Eres un asistente experto en dirección de obras de construcción. 
-                    Transforma las siguientes notas informales y el registro de horas en un reporte ejecutivo formal para el dueño de la empresa.
+            lineas.append(f"Horas totales: {pd.to_numeric(ho['horas']).sum():g} ({len(ho)} personas)")
+            for _, r in ho.iterrows():
+                tarea = f" - {r['tarea']}" if str(r["tarea"]).strip() else ""
+                lineas.append(f"  - {r['empleado']}: {float(r['horas']):g} hs{tarea}")
+        if av.empty:
+            lineas.append("Avances/novedades: sin registros")
+        else:
+            for _, r in av.iterrows():
+                lineas.append(f"Avance total de la obra: {r['avance_pct']}% | Tarea: {r['tarea']} | Novedades: {r['novedades']}")
+        bloques.append("\n".join(lineas))
 
-                    Obra: {obra_nombre}
-                    Avance: {porcentaje_avance}%
-                    Total Horas: {total_horas} hrs
-                    Detalle:
-                    {detalle_horas}
+    sin_reporte = [o for o in obras_activas if o not in con_datos]
+    if sin_reporte:
+        bloques.append("OBRAS ACTIVAS SIN NINGÚN REGISTRO HOY: " + ", ".join(sin_reporte))
+    return "\n\n".join(bloques)
 
-                    Notas del capataz: "{notas_crudas}"
 
-                    Estructura el informe en: 1. Resumen Ejecutivo, 2. Avances Físicos, 3. Análisis de Mano de Obra, 4. Observaciones/Clima.
-                    """
-                    
-                    response = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=0.3
-                    )
-                    
-                    reporte_final = response.choices[0].message.content
-                    
-                    st.success("¡Reporte generado con éxito!")
-                    st.markdown("### 📊 Informe Ejecutivo para la Dirección")
-                    st.markdown(reporte_final)
-                    st.info(f"Total de horas registradas procesadas: {total_horas} horas.")
-                    
-                except Exception as e:
-                    st.error(f"Ocurrió un error al conectar con la IA: {e}")
+def redactar_reporte(fecha_str: str, datos: str, api_key: str) -> str:
+    client = OpenAI(api_key=api_key)
+    resp = client.chat.completions.create(
+        model=MODELO,
+        messages=[{"role": "user", "content": PROMPT.format(fecha=fecha_str, datos=datos)}],
+        temperature=0.2,
+    )
+    return resp.choices[0].message.content
+
+
+# ---------- Pantalla ----------
+def _api_key() -> str | None:
+    try:
+        return st.secrets.get("OPENAI_API_KEY")
+    except Exception:
+        return None
+
+
+def _cargar(hoja: str, columnas: list[str]) -> pd.DataFrame:
+    df = _leer(hoja, ttl=0).fillna("")
+    for c in columnas:
+        if c not in df.columns:
+            df[c] = ""
+    return df
+
+
+def mostrar_modulo():
+    st.title("📨 Reporte Diario para la Gerencia")
+
+    api_key = _api_key()
+    if not api_key:
+        st.error("Falta configurar `OPENAI_API_KEY` en los secrets de la app (Streamlit Cloud → Settings → Secrets).")
+        return
+
+    fecha = st.date_input("Fecha del reporte", value=datetime.now(TZ).date(), format="DD/MM/YYYY")
+    fecha_str = fecha.strftime("%Y-%m-%d")
+
+    if st.button("🤖 Generar reporte", type="primary"):
+        with st.spinner("Leyendo lo cargado y redactando el informe..."):
+            try:
+                horas = _cargar(HOJA_HORAS, COLUMNAS_HORAS)
+                avances = _cargar(HOJA_AVANCES, COLUMNAS_AVANCES)
+                obras = _cargar(HOJA_OBRAS, ["nombre", "estado"])
+                activas = obras[obras["estado"].astype(str).str.strip().str.lower().isin(["activa", "en curso", "activo", ""])]
+                datos = construir_resumen(fecha_str, horas, avances, activas["nombre"].tolist())
+
+                if not datos.strip():
+                    st.warning("No hay horas ni avances cargados para esa fecha.")
+                    st.session_state.pop("reporte_texto", None)
+                else:
+                    st.session_state["reporte_texto"] = redactar_reporte(fecha_str, datos, api_key)
+                    st.session_state["reporte_datos"] = datos
+                    st.session_state["reporte_fecha"] = fecha_str
+            except Exception as e:
+                st.error(f"No se pudo generar el reporte: {e}")
+
+    if st.session_state.get("reporte_texto"):
+        st.markdown(f"### Informe del {st.session_state['reporte_fecha']}")
+        st.markdown(st.session_state["reporte_texto"])
+        st.download_button(
+            "⬇️ Descargar (.txt)",
+            st.session_state["reporte_texto"],
+            file_name=f"reporte_{st.session_state['reporte_fecha']}.txt",
+        )
+        with st.expander("Ver los datos en los que se basó el informe"):
+            st.text(st.session_state["reporte_datos"])

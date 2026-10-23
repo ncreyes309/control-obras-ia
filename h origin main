@@ -1,0 +1,17 @@
+[33mcommit e4182b7e5785c7d85fbaeba9153c4ba9932dc1a5[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: ncreyes309 <148561222+ncreyes309@users.noreply.github.com>
+Date:   Thu Oct 22 19:24:41 2026 -0300
+
+    Added Dev Container Folder
+
+[33mcommit fef3e7b162c8691155afa0921c2edc07cac38368[m
+Author: Noemi Reyes <nreyes@CUPAR-A.LOCAL>
+Date:   Thu Oct 22 11:14:32 2026 -0300
+
+    Implementa estructura modular completa con app.py, auth.py y carpeta modulos
+
+[33mcommit 06ce20053521baec1d661e9df39e6c951387618d[m
+Author: Noemi Reyes <nreyes@CUPAR-A.LOCAL>
+Date:   Thu Oct 22 09:53:11 2026 -0300
+
+    cambio de cuenta de gmail a constructura.reyes.juan@gmail.com
