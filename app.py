@@ -11,11 +11,9 @@ st.set_page_config(
     layout="wide",
 )
 
-# 1. Verificación de acceso
-autenticado = auth.verificar_autenticacion()
-
-if not autenticado:
-    st.stop()  # Detiene la ejecución si no hay sesión activa
+# 1. Verificación de acceso (incluye el cambio obligatorio de contraseña temporal)
+if not auth.verificar_autenticacion():
+    st.stop()
 
 rol = st.session_state["rol_actual"]
 
@@ -36,14 +34,14 @@ opciones_menu = [nombre for nombre, (_, roles) in PAGINAS.items() if rol in role
 st.sidebar.title("🏗️ Reyes Juan SRL")
 st.sidebar.caption(f"Usuario: **{st.session_state['usuario_actual']}** ({rol})")
 
-if opciones_menu:
-    menu = st.sidebar.radio("Navegación", opciones_menu)
-else:
-    menu = None
+menu = st.sidebar.radio("Navegación", opciones_menu) if opciones_menu else None
 
 st.sidebar.markdown("---")
 
-# Herramienta de administrador: hashear contraseñas que sigan en texto plano
+with st.sidebar.expander("🔑 Mi cuenta"):
+    auth.formulario_cambiar_password("cambio_sidebar")
+
+# Herramienta de administrador: guardar con hash contraseñas que sigan en texto plano
 if rol == "Administrador":
     if st.sidebar.button("🔒 Proteger contraseñas"):
         try:
@@ -53,9 +51,7 @@ if rol == "Administrador":
             st.sidebar.error(f"Error: {e}")
 
 if st.sidebar.button("🚪 Cerrar Sesión"):
-    st.session_state["autenticado"] = False
-    st.session_state["usuario_actual"] = ""
-    st.session_state["rol_actual"] = ""
+    auth.cerrar_sesion()
     st.rerun()
 
 # 4. Enrutamiento
