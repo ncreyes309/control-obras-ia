@@ -11,7 +11,7 @@ import streamlit as st
 
 from modulos import datos
 
-HOJA_USUARIOS = "Usuarios"
+HOJA_USUARIOS = "usuarios"
 MAX_INTENTOS = 5
 MIN_PASSWORD = 8
 ROLES = ["Administrador", "Gerente", "Director de Obras", "Abogada", "Administrativo General", "Capataz"]
