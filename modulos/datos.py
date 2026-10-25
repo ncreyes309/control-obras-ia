@@ -13,10 +13,10 @@ from streamlit_gsheets import GSheetsConnection
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
-HOJA_EMPLEADOS = "empleados"
-HOJA_OBRAS = "obras"
-HOJA_HORAS = "horas"
-HOJA_AVANCES = "avances"
+HOJA_EMPLEADOS = "Empleados"
+HOJA_OBRAS = "Obras"
+HOJA_HORAS = "Horas"
+HOJA_AVANCES = "Avances"
 
 COLUMNAS_HORAS = ["fecha", "DNI", "empleado", "horas", "tarea", "cargado_por", "timestamp"]
 COLUMNAS_AVANCES = ["fecha", "avance_pct", "tarea", "novedades", "cargado_por", "timestamp"]
@@ -46,23 +46,42 @@ def url_archivo(clave: str) -> str:
         raise RuntimeError("Falta la URL del Sheet: agregá 'spreadsheet' en [connections.gsheets] de los secrets.")
 
 
-#def leer(url: str, hoja: str, ttl: int = 0) -> pd.DataFrame:
-    #df = _conn().read(spreadsheet=url, worksheet=hoja, ttl=ttl)
-    #df = _conn().read(spreadsheet=url, worksheet=hoja, sheet=hoja, ttl=ttl)
-    #df = df.dropna(how="all")
-    #df.columns = [str(c).strip() for c in df.columns]
-    #return df
+_PESTANAS_OK: dict = {}
+
+
+def _candidatas(hoja: str) -> list:
+    """Nombres a probar para una pestaña: el recordado, el pedido, Capitalizado y minúscula."""
+    nombres = [_PESTANAS_OK.get((hoja.lower())), hoja, hoja.capitalize(), hoja.lower()]
+    vistos = []
+    for n in nombres:
+        if n and n not in vistos:
+            vistos.append(n)
+    return vistos
+
 
 def leer(url: str, hoja: str, ttl: int = 0) -> pd.DataFrame:
-    # Usamos directamente la conexión configurada en los secrets sin pasar la URL explícita
-    df = _conn().read(worksheet=hoja, ttl=ttl)
-    df = df.dropna(how="all")
-    df.columns = [str(c).strip() for c in df.columns]
-    return df
+    """Lee una pestaña; si el nombre difiere solo en mayúsculas ('usuarios' / 'Usuarios') lo encuentra solo."""
+    ultimo_error = None
+    for nombre in _candidatas(hoja):
+        try:
+            df = _conn().read(spreadsheet=url, worksheet=nombre, ttl=ttl)
+            _PESTANAS_OK[hoja.lower()] = nombre
+            df = df.dropna(how="all")
+            df.columns = [str(c).strip() for c in df.columns]
+            return df
+        except Exception as e:
+            ultimo_error = e
+    m = re.search(r"/d/([^/]+)", str(url))
+    fin = (m.group(1) if m else str(url))[-8:]
+    raise RuntimeError(
+        f"No pude leer la pestaña '{hoja}' del Sheet ...{fin} (probé {_candidatas(hoja)}): {ultimo_error}. "
+        f"Revisá que la URL de los secrets sea del archivo que tiene esa pestaña."
+    ) from ultimo_error
 
 
 def escribir(url: str, hoja: str, df: pd.DataFrame) -> None:
-    _conn().update(spreadsheet=url, worksheet=hoja, data=df)
+    nombre = _PESTANAS_OK.get(hoja.lower(), hoja)
+    _conn().update(spreadsheet=url, worksheet=nombre, data=df)
 
 
 def leer_obra(url_obra: str, hoja: str, columnas: list[str]) -> pd.DataFrame:
