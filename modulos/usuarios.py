@@ -31,7 +31,7 @@ def mostrar_modulo():
                     st.error(f"⚠️ {msj}")
 
     st.markdown("---")
-    st.subheader("📋 Usuarios Registrados en Google Sheets")
+    st.subheader("📋 usuarios Registrados en Google Sheets")
     try:
         df_u = auth.cargar_usuarios()
         st.dataframe(df_u[["DNI", "apellido", "nombre", "usuario", "rol"]], use_container_width=True)
