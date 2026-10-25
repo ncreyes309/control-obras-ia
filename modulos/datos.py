@@ -46,9 +46,16 @@ def url_archivo(clave: str) -> str:
         raise RuntimeError("Falta la URL del Sheet: agregá 'spreadsheet' en [connections.gsheets] de los secrets.")
 
 
-def leer(url: str, hoja: str, ttl: int = 0) -> pd.DataFrame:
-    df = _conn().read(spreadsheet=url, worksheet=hoja, ttl=ttl)
+#def leer(url: str, hoja: str, ttl: int = 0) -> pd.DataFrame:
+    #df = _conn().read(spreadsheet=url, worksheet=hoja, ttl=ttl)
     #df = _conn().read(spreadsheet=url, worksheet=hoja, sheet=hoja, ttl=ttl)
+    #df = df.dropna(how="all")
+    #df.columns = [str(c).strip() for c in df.columns]
+    #return df
+
+def leer(url: str, hoja: str, ttl: int = 0) -> pd.DataFrame:
+    # Usamos directamente la conexión configurada en los secrets sin pasar la URL explícita
+    df = _conn().read(worksheet=hoja, ttl=ttl)
     df = df.dropna(how="all")
     df.columns = [str(c).strip() for c in df.columns]
     return df
