@@ -89,6 +89,15 @@ def _es_si(valor) -> bool:
     return str(valor).strip().lower() in ("si", "sí", "true", "1", "x", "yes")
 
 
+def _normalizar_rol(valor) -> str:
+    """Devuelve el rol con su escritura oficial: 'administrador ' -> 'Administrador'."""
+    texto = str(valor).strip()
+    for rol in ROLES:
+        if rol.lower() == texto.lower():
+            return rol
+    return texto
+
+
 def _requiere_admin() -> None:
     if st.session_state.get("rol_actual") != "Administrador":
         raise PermissionError("Solo el Administrador puede hacer esto.")
@@ -155,7 +164,7 @@ def verificar_autenticacion() -> bool:
 
         st.session_state["autenticado"] = True
         st.session_state["usuario_actual"] = str(fila[c_user]).strip()
-        st.session_state["rol_actual"] = str(fila[c_rol]).strip()
+        st.session_state["rol_actual"] = _normalizar_rol(fila[c_rol])
         st.session_state["debe_cambiar_clave"] = bool(c_cc and _es_si(fila[c_cc]))
         st.session_state["intentos_login"] = 0
         ingreso_ok = True
