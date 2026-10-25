@@ -13,10 +13,10 @@ from streamlit_gsheets import GSheetsConnection
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
-HOJA_EMPLEADOS = "Empleados"
-HOJA_OBRAS = "Obras"
-HOJA_HORAS = "Horas"
-HOJA_AVANCES = "Avances"
+HOJA_EMPLEADOS = "empleados"
+HOJA_OBRAS = "obras"
+HOJA_HORAS = "horas"
+HOJA_AVANCES = "avances"
 
 COLUMNAS_HORAS = ["fecha", "DNI", "empleado", "horas", "tarea", "cargado_por", "timestamp"]
 COLUMNAS_AVANCES = ["fecha", "avance_pct", "tarea", "novedades", "cargado_por", "timestamp"]
