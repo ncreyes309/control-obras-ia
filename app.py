@@ -39,8 +39,8 @@ menu = st.sidebar.radio("Navegación", opciones_menu) if opciones_menu else None
 st.sidebar.markdown("---")
 
 with st.sidebar.expander("🔑 Mi cuenta"):
-    auth.formulario_cambiar_password("cambio_sidebar")
-
+    #auth.formulario_cambiar_password("cambio_sidebar")
+    auth.formulario_cambiar_password(clave="cambio_sidebar")
 # Herramienta de administrador: guardar con hash contraseñas que sigan en texto plano
 if rol == "Administrador":
     if st.sidebar.button("🔒 Proteger contraseñas"):
