@@ -2,11 +2,11 @@ import streamlit as st
 import auth
 
 def mostrar_modulo():
-    st.title("👤 Alta y Gestión de Usuarios")
+    st.title("👤 Alta y Gestión de usuarios")
     st.markdown("Módulo exclusivo para Administradores de Constructora Reyes Juan SRL.")
     
     with st.form("form_alta_usuario"):
-        st.subheader("➕ Registrar Nuevo Usuario")
+        st.subheader("➕ Registrar Nuevo usuario")
         col1, col2 = st.columns(2)
         with col1:
             dni_val = st.text_input("DNI")
