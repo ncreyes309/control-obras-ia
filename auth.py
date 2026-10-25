@@ -1,4 +1,4 @@
-"""Acceso al sistema: login, contraseñas con hash, usuarios activos/inactivos y cambio de clave.
+"""Acceso al sistema: login, contraseñas   con hash, usuarios activos/inactivos y cambio de clave.
 
 Pestaña 'Usuarios' del Sheet. Columnas obligatorias: DNI, apellido, nombre, usuario, password, rol.
 Columnas opcionales (se crean solas cuando hacen falta): activo (si/no), cambiar_clave (si/no).
