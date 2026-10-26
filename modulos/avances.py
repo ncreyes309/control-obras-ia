@@ -3,47 +3,42 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from modulos.horas import HOJA_OBRAS, TZ, _conn, _leer
-
-HOJA_AVANCES = "Avances"  # fecha | obra_id | obra | avance_pct | tarea | novedades | cargado_por | timestamp
-COLUMNAS_AVANCES = ["fecha", "obra_id", "obra", "avance_pct", "tarea", "novedades", "cargado_por", "timestamp"]
+from modulos import datos
 
 
 def mostrar_modulo():
     st.title("📝 Avances y Novedades de Obra")
 
     try:
-        obras = _leer(HOJA_OBRAS, ttl=300)
+        obras = datos.obras_activas()
     except Exception as e:
-        st.error(f"No pude leer la hoja '{HOJA_OBRAS}': {e}")
+        st.error(f"No pude leer la hoja de Obras: {e}")
         return
-
-    if "estado" in obras.columns:
-        obras = obras[obras["estado"].astype(str).str.strip().str.lower().isin(["activa", "en curso", "activo", ""])]
     if obras.empty:
         st.warning("No hay obras activas cargadas.")
         return
-
-    try:
-        existentes = _leer(HOJA_AVANCES, ttl=0)
-    except Exception:
-        existentes = pd.DataFrame(columns=COLUMNAS_AVANCES)
 
     col1, col2 = st.columns(2)
     with col1:
         obra_nombre = st.selectbox("Obra", obras["nombre"].tolist())
     with col2:
-        fecha = st.date_input("Fecha", value=datetime.now(TZ).date(), format="DD/MM/YYYY")
+        fecha = st.date_input("Fecha", value=datetime.now(datos.TZ).date(), format="DD/MM/YYYY")
+    fecha_str = fecha.strftime("%Y-%m-%d")
 
     obra_row = obras[obras["nombre"] == obra_nombre].iloc[0]
+    archivo = str(obra_row.get("archivo", "")).strip()
+    if not archivo:
+        st.error("Esta obra no tiene archivo asignado. Completá la columna 'archivo' en la hoja Obras.")
+        return
 
-    # Último avance conocido de la obra
-    ultimo = 0.0
-    if not existentes.empty and "avance_pct" in existentes.columns:
-        previos = existentes[existentes["obra_id"].astype(str) == str(obra_row["obra_id"])]
-        previos = pd.to_numeric(previos["avance_pct"], errors="coerce").dropna()
-        if not previos.empty:
-            ultimo = float(previos.iloc[-1])
+    try:
+        existentes = datos.leer_obra(archivo, datos.HOJA_AVANCES, datos.COLUMNAS_AVANCES)
+    except Exception as e:
+        st.error(f"No pude abrir el archivo de esta obra (¿está compartido con la cuenta de servicio y tiene la pestaña 'Avances'?): {e}")
+        return
+
+    previos = datos.num(existentes["avance_pct"]).dropna()
+    ultimo = float(previos.iloc[-1]) if not previos.empty else 0.0
     st.caption(f"Último avance informado de esta obra: **{ultimo:g}%**")
 
     with st.form("form_avance", clear_on_submit=True):
@@ -63,30 +58,22 @@ def mostrar_modulo():
             st.warning(f"El avance ({avance:g}%) es menor al último informado ({ultimo:g}%). Se guarda igual, revisá que sea correcto.")
         try:
             nuevo = pd.DataFrame([{
-                "fecha": fecha.strftime("%Y-%m-%d"),
-                "obra_id": obra_row["obra_id"],
-                "obra": obra_nombre,
+                "fecha": fecha_str,
                 "avance_pct": float(avance),
                 "tarea": tarea.strip(),
                 "novedades": novedades.strip(),
                 "cargado_por": st.session_state["usuario_actual"],
-                "timestamp": datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": datetime.now(datos.TZ).strftime("%Y-%m-%d %H:%M:%S"),
             }])
             total = pd.concat([existentes, nuevo], ignore_index=True)
-            _conn().update(worksheet=HOJA_AVANCES, data=total)
+            datos.escribir(archivo, datos.HOJA_AVANCES, total)
             st.success("Avance guardado.")
         except Exception as e:
             st.error(f"Error al guardar: {e}")
 
-    with st.expander("Ver lo cargado hoy en esta obra"):
-        if existentes.empty:
-            st.caption("Todavía no hay avances cargados.")
+    with st.expander("Ver lo cargado ese día en esta obra"):
+        d = existentes[datos.fecha_iso(existentes["fecha"]) == fecha_str]
+        if d.empty:
+            st.caption("Todavía no hay avances cargados para este día.")
         else:
-            d = existentes[
-                (existentes["fecha"].astype(str).str[:10] == fecha.strftime("%Y-%m-%d"))
-                & (existentes["obra_id"].astype(str) == str(obra_row["obra_id"]))
-            ]
-            if d.empty:
-                st.caption("Todavía no hay avances cargados para este día.")
-            else:
-                st.dataframe(d[["avance_pct", "tarea", "novedades", "cargado_por"]], hide_index=True, use_container_width=True)
+            st.dataframe(d[["avance_pct", "tarea", "novedades", "cargado_por"]], hide_index=True, use_container_width=True)
