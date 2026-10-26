@@ -7,9 +7,9 @@ from streamlit_gsheets import GSheetsConnection
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
-HOJA_EMPLEADOS = "Empleados"   # DNI | apellido | nombre | categoria | activo
-HOJA_OBRAS = "Obras"           # obra_id | nombre | direccion | estado
-HOJA_HORAS = "Horas"           # fecha | obra_id | obra | DNI | empleado | horas | tarea | cargado_por | timestamp
+HOJA_EMPLEADOS = "empleados"   # DNI | apellido | nombre | categoria | activo
+HOJA_OBRAS = "obras"           # obra_id | nombre | direccion | estado
+HOJA_HORAS = "horas"           # fecha | obra_id | obra | DNI | empleado | horas | tarea | cargado_por | timestamp
 
 COLUMNAS_HORAS = ["fecha", "obra_id", "obra", "DNI", "empleado", "horas", "tarea", "cargado_por", "timestamp"]
 
