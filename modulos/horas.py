@@ -78,7 +78,7 @@ def mostrar_modulo():
                     "horas": float(r["Horas"]),
                     "tarea": r["Tarea"],
                     "cargado_por": st.session_state["usuario_actual"],
-                    "timestamp": ahora,
+                    "hora_actual": ahora,
                 })
 
             if nuevas:
