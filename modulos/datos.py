@@ -18,7 +18,7 @@ HOJA_OBRAS = "obras"
 HOJA_HORAS = "horas"
 HOJA_AVANCES = "avances"
 
-COLUMNAS_HORAS = ["fecha", "DNI", "empleado", "horas", "tarea", "cargado_por", "timestamp"]
+COLUMNAS_HORAS = ["fecha", "DNI", "empleado", "entrada", "salida", "horas", "tarea", "cargado_por", "timestamp"]
 COLUMNAS_AVANCES = ["fecha", "avance_pct", "tarea", "novedades", "cargado_por", "timestamp"]
 
 ESTADOS_OBRA_ACTIVA = ["activa", "en curso", "activo", ""]
