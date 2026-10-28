@@ -137,7 +137,7 @@ def mostrar_modulo():
                     "horas": hs if hs is not None else "",
                     "tarea": str(r["Tarea"]),
                     "cargado_por": st.session_state["usuario_actual"],
-                    "timestamp": ahora,
+                    "hora_actual": ahora,
                 }
                 mask = (total["_fecha"] == fecha_str) & (total["DNI"] == str(r["DNI"]))
                 if mask.any():
@@ -146,20 +146,21 @@ def mostrar_modulo():
                         total.at[idx, k] = v
                     actualizadas += 1
                 else:
-                    fila = {"fecha": fecha_str, "DNI": str(r["DNI"]), "empleado": r["Empleado"], "_fecha": fecha_str, **valores}
+                    fila = {"fecha": fecha_str, "obra_id": str(obra_row.get("obra_id", "")), "obra": obra_nombre,
+                            "DNI": str(r["DNI"]), "empleado": r["Empleado"], "_fecha": fecha_str, **valores}
                     total = pd.concat([total, pd.DataFrame([fila])], ignore_index=True)
                     nuevas += 1
 
             total = total.drop(columns="_fecha").fillna("")
             datos.escribir(archivo, datos.HOJA_HORAS, total)
+            existentes = total
             st.success(f"Guardado: {nuevas} nuevos y {actualizadas} actualizados en {obra_nombre}.")
         except Exception as e:
             st.error(f"Error al guardar: {e}")
 
     with st.expander("Resumen del día en esta obra", expanded=True):
         try:
-            h = datos.leer_obra(archivo, datos.HOJA_HORAS, datos.COLUMNAS_HORAS)
-            h = h[datos.fecha_iso(h["fecha"]) == fecha_str]
+            h = existentes[datos.fecha_iso(existentes["fecha"]) == fecha_str]
             if h.empty:
                 st.caption("Todavía no hay horas cargadas.")
             else:

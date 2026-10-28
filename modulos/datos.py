@@ -13,12 +13,12 @@ from streamlit_gsheets import GSheetsConnection
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
-HOJA_EMPLEADOS = "empleados"
-HOJA_OBRAS = "obras"
-HOJA_HORAS = "horas"
-HOJA_AVANCES = "avances"
+HOJA_EMPLEADOS = "Empleados"
+HOJA_OBRAS = "Obras"
+HOJA_HORAS = "Horas"
+HOJA_AVANCES = "Avances"
 
-COLUMNAS_HORAS = ["fecha", "DNI", "empleado", "entrada", "salida", "horas", "tarea", "cargado_por", "timestamp"]
+COLUMNAS_HORAS = ["fecha", "obra_id", "obra", "DNI", "empleado", "entrada", "salida", "horas", "tarea", "cargado_por", "hora_actual"]
 COLUMNAS_AVANCES = ["fecha", "avance_pct", "tarea", "novedades", "cargado_por", "timestamp"]
 
 ESTADOS_OBRA_ACTIVA = ["activa", "en curso", "activo", ""]
@@ -61,7 +61,7 @@ def _candidatas(hoja: str) -> list:
 
 def leer(url: str, hoja: str, ttl: int = 0) -> pd.DataFrame:
     """Lee una pestaña; si el nombre difiere solo en mayúsculas ('usuarios' / 'Usuarios') lo encuentra solo."""
-    ultimo_error = None
+    errores = []
     for nombre in _candidatas(hoja):
         try:
             df = _conn().read(spreadsheet=url, worksheet=nombre, ttl=ttl)
@@ -70,13 +70,13 @@ def leer(url: str, hoja: str, ttl: int = 0) -> pd.DataFrame:
             df.columns = [str(c).strip() for c in df.columns]
             return df
         except Exception as e:
-            ultimo_error = e
+            errores.append(f"'{nombre}' -> {type(e).__name__}: {e}")
     m = re.search(r"/d/([^/]+)", str(url))
     fin = (m.group(1) if m else str(url))[-8:]
     raise RuntimeError(
-        f"No pude leer la pestaña '{hoja}' del Sheet ...{fin} (probé {_candidatas(hoja)}): {ultimo_error}. "
-        f"Revisá que la URL de los secrets sea del archivo que tiene esa pestaña."
-    ) from ultimo_error
+        f"No pude leer la pestaña '{hoja}' del Sheet ...{fin} Detalle: {' | '.join(errores)}. "
+        f"Revisá que la URL sea del archivo que tiene esa pestaña."
+    )
 
 
 def escribir(url: str, hoja: str, df: pd.DataFrame) -> None:
