@@ -71,6 +71,12 @@ def leer(url: str, hoja: str, ttl: int = 0) -> pd.DataFrame:
             return df
         except Exception as e:
             errores.append(f"'{nombre}' -> {type(e).__name__}: {e}")
+            texto = str(e)
+            if "429" in texto or "RATE_LIMIT" in texto or "Quota exceeded" in texto:
+                # Límite de lecturas de Google: probar otros nombres solo gasta más cuota
+                raise RuntimeError(
+                    "Google limita las lecturas por minuto (60). Esperá 1 minuto y recargá la página (F5)."
+                ) from e
     m = re.search(r"/d/([^/]+)", str(url))
     fin = (m.group(1) if m else str(url))[-8:]
     raise RuntimeError(
@@ -82,11 +88,12 @@ def leer(url: str, hoja: str, ttl: int = 0) -> pd.DataFrame:
 def escribir(url: str, hoja: str, df: pd.DataFrame) -> None:
     nombre = _PESTANAS_OK.get(hoja.lower(), hoja)
     _conn().update(spreadsheet=url, worksheet=nombre, data=df)
+    st.cache_data.clear()  # que la próxima lectura traiga lo recién guardado
 
 
 def leer_obra(url_obra: str, hoja: str, columnas: list[str]) -> pd.DataFrame:
     """Lee una pestaña del archivo de una obra, asegurando que existan las columnas esperadas."""
-    df = leer(url_obra, hoja, ttl=0).fillna("")
+    df = leer(url_obra, hoja, ttl=30).fillna("")
     for c in columnas:
         if c not in df.columns:
             df[c] = ""
@@ -95,14 +102,14 @@ def leer_obra(url_obra: str, hoja: str, columnas: list[str]) -> pd.DataFrame:
 
 # ---------- Catálogos ----------
 def obras_activas() -> pd.DataFrame:
-    df = leer(url_archivo("obras"), HOJA_OBRAS, ttl=60)
+    df = leer(url_archivo("obras"), HOJA_OBRAS, ttl=300)
     if "estado" in df.columns:
         df = df[df["estado"].fillna("").astype(str).str.strip().str.lower().isin(ESTADOS_OBRA_ACTIVA)]
     return df
 
 
 def empleados_activos() -> pd.DataFrame:
-    df = leer(url_archivo("empleados"), HOJA_EMPLEADOS, ttl=60)
+    df = leer(url_archivo("empleados"), HOJA_EMPLEADOS, ttl=300)
     if "activo" in df.columns:
         df = df[df["activo"].fillna("").astype(str).str.strip().str.lower().isin(["si", "sí", "true", "1", "x", "activo", ""])]
     return df
