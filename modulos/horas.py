@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, time
 
 import pandas as pd
@@ -7,17 +8,21 @@ from modulos import datos
 
 
 def _a_hora(valor):
-    """'07:30', '7:30:00' o time -> datetime.time (o None si está vacío o es inválido)."""
+    """time, datetime/Timestamp o texto ('07:30', '7:30:00', '1970-01-01 07:30:00') -> datetime.time o None."""
+    if valor is None:
+        return None
+    try:
+        if pd.isna(valor):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(valor, datetime):
+        return valor.time().replace(second=0, microsecond=0)
     if isinstance(valor, time):
         return valor.replace(second=0, microsecond=0)
-    texto = str(valor).strip()
-    if not texto or texto.lower() in ("nan", "none", "nat"):
-        return None
-    for fmt in ("%H:%M", "%H:%M:%S"):
-        try:
-            return datetime.strptime(texto, fmt).time()
-        except ValueError:
-            pass
+    m = re.search(r"(\d{1,2}):(\d{2})", str(valor))
+    if m and int(m.group(1)) < 24 and int(m.group(2)) < 60:
+        return time(int(m.group(1)), int(m.group(2)))
     return None
 
 
@@ -112,6 +117,9 @@ def mostrar_modulo():
         errores = []
         for _, r in a_guardar.iterrows():
             ent, sal = _a_hora(r["Entrada"]), _a_hora(r["Salida"])
+            if (pd.notna(r["Entrada"]) and not ent) or (pd.notna(r["Salida"]) and not sal):
+                errores.append(f"{r['Empleado']}: no pude interpretar la hora ({r['Entrada']!r} / {r['Salida']!r}).")
+                continue
             if sal and not ent:
                 errores.append(f"{r['Empleado']}: tiene salida pero falta la entrada.")
             elif ent and sal and sal <= ent:
