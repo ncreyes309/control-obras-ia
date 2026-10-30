@@ -3,3 +3,5 @@ pandas
 st-gsheets-connection
 openai
 bcrypt
+sqlalchemy
+psycopg2-binary
