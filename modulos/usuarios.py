@@ -1,5 +1,8 @@
+import sys
+import os
 import streamlit as st
 import modulos.datos as datos
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import auth
 
 def mostrar_modulo():

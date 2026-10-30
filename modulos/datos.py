@@ -30,9 +30,13 @@ def ejecutar_sql(query: str, params: dict = None):
 # ---------- Módulo 1: Gestión de Usuarios (Empleados) ----------
 def cargar_todos_usuarios(empresa_id: int) -> pd.DataFrame:
     """Obtiene todos los usuarios para una empresa de PostgreSQL."""
-    query = "SELECT id, empresa_id, dni as DNI, apellido, nombre, email, usuario, rol, activo FROM usuarios WHERE empresa_id = :empresa_id"
+    query = "SELECT id, empresa_id, dni, apellido, nombre, email, usuario, rol, activo FROM usuarios WHERE empresa_id = :empresa_id"
     params = {"empresa_id": empresa_id}
-    return leer_sql(query, params=params)
+    df = leer_sql(query, params=params)
+    # Renombramos dni a DNI para que coincida con la vista de la tabla
+    if "dni" in df.columns:
+        df = df.rename(columns={"dni": "DNI"})
+    return df
 
 def crear_usuario(empresa_id, dni, apellido, nombre, email, usuario, password_hash, rol):
     """Crea un nuevo usuario en PostgreSQL."""
