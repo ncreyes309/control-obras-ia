@@ -8,9 +8,9 @@ import auth
 def mostrar_modulo():
     st.title("👤 Alta y Gestión de empleados (usuarios)")
     st.markdown("Módulo exclusivo para Administradores de Constructora Reyes Juan SRL.")
-    
+
     # Supongamos que ya tenemos un ID de empresa en el estado de la sesión, sino usamos 1
-    empresa_id = 1 # Para pruebas. En producción usar st.session_state["usuario_info"]["empresa_id"]
+    empresa_id = 1  # Para pruebas. En producción usar st.session_state["usuario_info"]["empresa_id"]
 
     with st.form("form_alta_usuario"):
         st.subheader("➕ Registrar Nuevo Empleado / Usuario")
@@ -23,22 +23,28 @@ def mostrar_modulo():
         with col2:
             nuevo_user = st.text_input("Nombre de Usuario (ej. pedro.perez)*")
             nuevo_pass = st.text_input("Contraseña asignada*", type="password")
-            nuevo_rol = st.selectbox("Rol / Nivel de Permisos", ["Administrador", "Gerente", "Director de Obras", "Abogada", "Administrativo General", "Capataz"])
-        
+            nuevo_rol = st.selectbox("Rol / Nivel de Permisos", auth.ROLES)
+
         btn_crear = st.form_submit_button("💾 Guardar Usuario en PostgreSQL")
-        
+
         if btn_crear:
             # Validaciones de campos obligatorios
             campos_obligatorios = [dni_val, nombre_val, apellido_val, nuevo_user, nuevo_pass]
             if not all(str(c).strip() for c in campos_obligatorios):
                 st.error("⚠️ Los campos marcados con * son obligatorios.")
             else:
-                # 1. Proteger la contraseña con bcrypt --se cambioo
-                password_hash = auth.proteger_contraseña(nuevo_pass)
-                
+                # 0. Validar largo mínimo / máximo de la contraseña
+                ok_pass, msj_pass = auth.validar_password_nueva(nuevo_pass)
+                if not ok_pass:
+                    st.error(f"⚠️ {msj_pass}")
+                    return
+
+                # 1. Proteger la contraseña con bcrypt (función real de auth.py)
+                password_hash = auth.hashear_password(nuevo_pass)
+
                 # 2. Guardar en PostgreSQL
                 exito, msj = datos.crear_usuario(empresa_id, dni_val, apellido_val, nombre_val, email_val, nuevo_user, password_hash, nuevo_rol)
-                
+
                 if exito:
                     st.success(f"✅ {msj}")
                     st.rerun()
