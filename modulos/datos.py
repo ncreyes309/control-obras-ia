@@ -8,6 +8,16 @@ TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
 ESTADOS_OBRA_ACTIVA = ["activa", "en curso", "activo", ""]
 
+# Empresa por defecto si el usuario logueado no tiene empresa_id (Constructora Reyes Juan SRL)
+EMPRESA_ID_DEFECTO = 100
+
+def empresa_actual() -> int:
+    """empresa_id del usuario logueado (se guarda en la sesión al iniciar sesión)."""
+    try:
+        return int(st.session_state.get("empresa_id") or EMPRESA_ID_DEFECTO)
+    except (TypeError, ValueError):
+        return EMPRESA_ID_DEFECTO
+
 # ---------- Conexión a Base de Datos ----------
 @st.cache_resource
 def _get_engine():

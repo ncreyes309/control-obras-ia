@@ -14,7 +14,7 @@ def mostrar_modulo():
         st.error("⛔ Solo el Administrador puede acceder a este módulo.")
         return
 
-    empresa_id = st.session_state.get("empresa_id", 1)
+    empresa_id = datos.empresa_actual()
 
     # Mensaje que sobrevive al st.rerun()
     flash = st.session_state.pop("_flash_usuarios", None)

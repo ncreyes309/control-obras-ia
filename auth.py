@@ -130,6 +130,7 @@ def cerrar_sesion() -> None:
     st.session_state["autenticado"] = False
     st.session_state["usuario_actual"] = ""
     st.session_state["rol_actual"] = ""
+    st.session_state["empresa_id"] = None
     st.session_state["debe_cambiar_clave"] = False
 
 def verificar_autenticacion() -> bool:
@@ -184,6 +185,9 @@ def verificar_autenticacion() -> bool:
 
         st.session_state["autenticado"] = True
         st.session_state["usuario_actual"] = str(fila[c_user]).strip()
+        c_emp = _col_opcional(df, "empresa_id")
+        emp = pd.to_numeric(fila[c_emp], errors="coerce") if c_emp else None
+        st.session_state["empresa_id"] = int(emp) if emp is not None and pd.notna(emp) else datos.EMPRESA_ID_DEFECTO
         st.session_state["rol_actual"] = _normalizar_rol(fila[c_rol])
         st.session_state["debe_cambiar_clave"] = bool(c_cc and _es_si(fila[c_cc]))
         st.session_state["intentos_login"] = 0
@@ -267,7 +271,7 @@ def registrar_usuario(dni, apellido, nombre, usuario, password, rol):
         if _buscar(df, c_user, usuario) is not None:
             return False, "El nombre de usuario ya está registrado."
 
-        return datos.crear_usuario(1, str(dni).strip(), apellido.strip(), nombre.strip(), "",
+        return datos.crear_usuario(datos.empresa_actual(), str(dni).strip(), apellido.strip(), nombre.strip(), "",
                                    usuario, hashear_password(password), rol)
     except Exception as e:
         return False, str(e)
