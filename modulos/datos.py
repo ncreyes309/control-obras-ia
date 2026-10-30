@@ -9,11 +9,12 @@ TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 ESTADOS_OBRA_ACTIVA = ["activa", "en curso", "activo", ""]
 
 # ---------- Conexión a Base de Datos ----------
+@st.cache_resource
 def _get_engine():
-    """Crea y reutiliza el motor de conexión a PostgreSQL usando los secrets."""
+    """Crea UNA sola vez el motor de conexión a PostgreSQL (se reutiliza entre ejecuciones)."""
     cfg = st.secrets["postgres"]
     url = f"postgresql+psycopg2://{cfg['user']}:{cfg['password']}@{cfg['host']}:{cfg['port']}/{cfg['database']}"
-    return create_engine(url)
+    return create_engine(url, pool_pre_ping=True)
 
 def leer_sql(query: str, params: dict = None) -> pd.DataFrame:
     """Ejecuta una consulta SQL de lectura y devuelve un DataFrame."""
@@ -41,8 +42,8 @@ def cargar_todos_usuarios(empresa_id: int) -> pd.DataFrame:
 def crear_usuario(empresa_id, dni, apellido, nombre, email, usuario, password_hash, rol):
     """Crea un nuevo usuario en PostgreSQL."""
     query = """
-    INSERT INTO usuarios (empresa_id, dni, apellido, nombre, email, usuario, password, rol)
-    VALUES (:empresa_id, :dni, :apellido, :nombre, :email, :usuario, :password, :rol);
+    INSERT INTO usuarios (empresa_id, dni, apellido, nombre, email, usuario, password, rol, activo, cambiar_clave)
+    VALUES (:empresa_id, :dni, :apellido, :nombre, :email, :usuario, :password, :rol, 'si', 'si');
     """
     params = {
         "empresa_id": empresa_id,

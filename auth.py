@@ -9,6 +9,7 @@ import hmac
 import bcrypt
 import pandas as pd
 import streamlit as st
+from sqlalchemy import inspect, text
 
 from modulos import datos
 
@@ -53,9 +54,21 @@ def cargar_usuarios() -> pd.DataFrame:
     return df.fillna("")
 
 def guardar_usuarios(df: pd.DataFrame) -> None:
-    """Actualiza la tabla de usuarios en PostgreSQL con los cambios del DataFrame."""
+    """Actualiza (UPDATE por id) solo las filas existentes, sin tocar la estructura de la tabla."""
     engine = datos._get_engine()
-    df.to_sql("usuarios", engine, if_exists="replace", index=False)
+    cols_db = {c["name"] for c in inspect(engine).get_columns("usuarios")}
+    editables = [c for c in ("password", "rol", "activo", "cambiar_clave") if c in df.columns and c in cols_db]
+    if "id" not in df.columns or not editables:
+        raise ValueError("No se puede guardar: falta la columna 'id' o no hay columnas editables.")
+    sets = ", ".join(f"{c} = :{c}" for c in editables)
+    query = text(f"UPDATE usuarios SET {sets} WHERE id = :id")
+    with engine.begin() as conn:  # una sola transacción: o se guarda todo o nada
+        for _, fila in df.iterrows():
+            if str(fila["id"]).strip() == "":
+                continue
+            params = {c: (None if c != "password" and fila[c] == "" else fila[c]) for c in editables}
+            params["id"] = int(fila["id"])
+            conn.execute(query, params)
 
 def guardar_usuario_db(usuario_dict: dict):
     """Inserta un usuario directamente en la base de datos."""
@@ -254,19 +267,8 @@ def registrar_usuario(dni, apellido, nombre, usuario, password, rol):
         if _buscar(df, c_user, usuario) is not None:
             return False, "El nombre de usuario ya está registrado."
 
-        nuevo = pd.DataFrame([{
-            "empresa_id": 1,
-            "DNI": str(dni).strip(),
-            "apellido": apellido.strip(),
-            "nombre": nombre.strip(),
-            "usuario": usuario,
-            "password": hashear_password(password),
-            "rol": rol,
-            "activo": "si",
-            "cambiar_clave": "si",
-        }])
-        guardar_usuarios(pd.concat([df, nuevo], ignore_index=True).fillna(""))
-        return True, "Usuario creado. Deberá cambiar la contraseña al ingresar."
+        return datos.crear_usuario(1, str(dni).strip(), apellido.strip(), nombre.strip(), "",
+                                   usuario, hashear_password(password), rol)
     except Exception as e:
         return False, str(e)
 
