@@ -8,7 +8,7 @@ from modulos import datos
 
 
 def _a_hora(valor):
-    """time, datetime/Timestamp o texto ('07:30', '7:30:00', '1970-01-01 07:30:00') -> datetime.time o None."""
+    """time, datetime/Timestamp o texto ('07:30', '7:30:00') -> datetime.time o None."""
     if valor is None:
         return None
     try:
@@ -31,11 +31,38 @@ def _texto(hora) -> str:
 
 
 def _horas_trabajadas(entrada, salida):
-    """Horas decimales entre entrada y salida (None si falta alguna)."""
+    """Calcula horas decimales entre entrada y salida (None si falta alguna)."""
     if not entrada or not salida:
         return None
     minutos = (salida.hour * 60 + salida.minute) - (entrada.hour * 60 + entrada.minute)
     return round(minutos / 60, 2)
+
+
+def cargar_horas_obra_fecha(id_obra: str, fecha_str: str) -> pd.DataFrame:
+    """Consulta los registros de horas desde PostgreSQL para una obra y fecha dada."""
+    query = """
+        SELECT id_registro, dni_empleado, id_obra, id_tarea_obra, fecha, 
+               hora_inicio, hora_fin, cantidad_horas, fecha_carga
+        FROM horas
+        WHERE id_obra = :id_obra AND fecha = :fecha
+    """
+    return datos.leer_sql(query, {"id_obra": str(id_obra), "fecha": fecha_str})
+
+
+def guardar_registro_hora(registro: dict):
+    """Inserta o actualiza un registro de horas en la base de datos PostgreSQL."""
+    query = """
+        INSERT INTO horas (id_registro, dni_empleado, id_obra, id_tarea_obra, fecha, hora_inicio, hora_fin, cantidad_horas, fecha_carga)
+        VALUES (:id_registro, :dni_empleado, :id_obra, :id_tarea_obra, :fecha, :hora_inicio, :hora_fin, :cantidad_horas, :fecha_carga)
+        ON CONFLICT (id_registro) 
+        DO UPDATE SET 
+            hora_inicio = EXCLUDED.hora_inicio,
+            hora_fin = EXCLUDED.hora_fin,
+            cantidad_horas = EXCLUDED.cantidad_horas,
+            id_tarea_obra = EXCLUDED.id_tarea_obra,
+            fecha_carga = EXCLUDED.fecha_carga;
+    """
+    datos.ejecutar_sql(query, registro)
 
 
 def mostrar_modulo():
@@ -45,7 +72,7 @@ def mostrar_modulo():
         empleados = datos.empleados_activos()
         obras = datos.obras_activas()
     except Exception as e:
-        st.error(f"No pude leer las hojas de Empleados u Obras: {e}")
+        st.error(f"No pude leer los datos de Empleados u Obras desde PostgreSQL: {e}")
         return
 
     if obras.empty or empleados.empty:
@@ -60,40 +87,35 @@ def mostrar_modulo():
     fecha_str = fecha.strftime("%Y-%m-%d")
 
     obra_row = obras[obras["nombre"] == obra_nombre].iloc[0]
-    archivo = str(obra_row.get("archivo", "")).strip()
-    if not archivo:
-        st.error("Esta obra no tiene archivo asignado. Completá la columna 'archivo' en la hoja Obras.")
-        return
+    id_obra = str(obra_row.get("id", obra_row.get("id_obra", obra_nombre)))
 
     try:
-        existentes = datos.leer_obra(archivo, datos.HOJA_HORAS, datos.COLUMNAS_HORAS)
+        existentes = cargar_horas_obra_fecha(id_obra, fecha_str)
     except Exception as e:
-        st.error(f"No pude abrir el archivo de esta obra: {e}")
+        st.error(f"Error al consultar horas registradas en PostgreSQL: {e}")
         return
 
-    # Lo ya cargado ese día (por ejemplo, entradas de la mañana)
-    dia = existentes[datos.fecha_iso(existentes["fecha"]) == fecha_str]
     previo = {
-        datos.dni_str(pd.Series([r["DNI"]])).iloc[0]: r
-        for _, r in dia.iterrows()
-    }
+        datos.dni_str(pd.Series([r["dni_empleado"]])).iloc[0]: r
+        for _, r in existentes.iterrows()
+    } if not existentes.empty else {}
 
     filas = []
     for _, e in empleados.iterrows():
-        dni = datos.dni_str(pd.Series([e["DNI"]])).iloc[0]
-        p = previo.get(dni)
+        dni_empleado = datos.dni_str(pd.Series([e.get("dni", e.get("DNI", ""))])).iloc[0]
+        p = previo.get(dni_empleado)
         filas.append({
-            "DNI": dni,
-            "Empleado": f"{e['apellido']}, {e['nombre']}",
-            "Entrada": _a_hora(p["entrada"]) if p is not None else None,
-            "Salida": _a_hora(p["salida"]) if p is not None else None,
-            "Tarea": str(p["tarea"]) if p is not None else "",
+            "DNI": dni_empleado,
+            "Empleado": f"{e.get('nombre', '')}",
+            "Entrada": _a_hora(p["hora_inicio"]) if p is not None else None,
+            "Salida": _a_hora(p["hora_fin"]) if p is not None else None,
+            "Tarea": str(p["id_tarea_obra"]) if p is not None and p["id_tarea_obra"] else "",
         })
     base = pd.DataFrame(filas)
 
     st.caption(
-        "A la mañana cargá solo la **Entrada** y guardá. Al terminar la jornada, volvé a abrir esta "
-        "pantalla, completá la **Salida** y guardá de nuevo: las horas se calculan solas."
+        "A la mañana cargá la **Entrada** y guardá. Al finalizar la jornada, "
+        "completá la **Salida** y la **Tarea**: las horas se calculan y guardan directo en Cloud SQL."
     )
     editado = st.data_editor(
         base,
@@ -105,10 +127,10 @@ def mostrar_modulo():
             "Salida": st.column_config.TimeColumn("Salida", format="HH:mm", step=60),
             "Tarea": st.column_config.TextColumn("Tarea / novedad"),
         },
-        key=f"editor_horas_{obra_nombre}_{fecha_str}",
+        key=f"editor_horas_{id_obra}_{fecha_str}",
     )
 
-    if st.button("💾 Guardar", type="primary"):
+    if st.button("💾 Guardar en Cloud SQL", type="primary"):
         a_guardar = editado[editado["Entrada"].notna() | editado["Salida"].notna()]
         if a_guardar.empty:
             st.warning("No cargaste ninguna entrada ni salida.")
@@ -130,55 +152,41 @@ def mostrar_modulo():
             return
 
         try:
-            total = existentes.copy()
-            total["DNI"] = datos.dni_str(total["DNI"])
-            total["_fecha"] = datos.fecha_iso(total["fecha"])
             ahora = datetime.now(datos.TZ).strftime("%Y-%m-%d %H:%M:%S")
-            nuevas, actualizadas = 0, 0
+            guardados = 0
 
             for _, r in a_guardar.iterrows():
                 ent, sal = _a_hora(r["Entrada"]), _a_hora(r["Salida"])
-                hs = _horas_trabajadas(ent, sal)
-                valores = {
-                    "entrada": _texto(ent),
-                    "salida": _texto(sal),
-                    "horas": hs if hs is not None else "",
-                    "tarea": str(r["Tarea"]),
-                    "cargado_por": st.session_state["usuario_actual"],
-                    "hora_actual": ahora,
-                }
-                mask = (total["_fecha"] == fecha_str) & (total["DNI"] == str(r["DNI"]))
-                if mask.any():
-                    idx = total.index[mask][0]
-                    for k, v in valores.items():
-                        total.at[idx, k] = v
-                    actualizadas += 1
-                else:
-                    fila = {"fecha": fecha_str, "obra_id": str(obra_row.get("obra_id", "")), "obra": obra_nombre,
-                            "DNI": str(r["DNI"]), "empleado": r["Empleado"], "_fecha": fecha_str, **valores}
-                    total = pd.concat([total, pd.DataFrame([fila])], ignore_index=True)
-                    nuevas += 1
+                hs = _horas_trabajadas(ent, sal) if (ent and sal) else 0.0
+                dni_emp = str(r["DNI"])
+                id_reg = f"H-{id_obra}-{dni_emp}-{fecha_str}"
 
-            total = total.drop(columns="_fecha").fillna("")
-            datos.escribir(archivo, datos.HOJA_HORAS, total)
-            existentes = total
-            st.success(f"Guardado: {nuevas} nuevos y {actualizadas} actualizados en {obra_nombre}.")
+                registro = {
+                    "id_registro": id_reg,
+                    "dni_empleado": dni_emp,
+                    "id_obra": id_obra,
+                    "id_tarea_obra": str(r["Tarea"]) if r["Tarea"] else "General",
+                    "fecha": fecha_str,
+                    "hora_inicio": ent if ent else time(0, 0),
+                    "hora_fin": sal if sal else time(0, 0),
+                    "cantidad_horas": float(hs),
+                    "fecha_carga": ahora,
+                }
+                guardar_registro_hora(registro)
+                guardados += 1
+
+            st.success(f" Se guardaron/actualizaron {guardados} registros en Google Cloud SQL para {obra_nombre}.")
+            st.rerun()
         except Exception as e:
-            st.error(f"Error al guardar: {e}")
+            st.error(f"Error al guardar en la base de datos: {e}")
 
     with st.expander("Resumen del día en esta obra", expanded=True):
         try:
-            h = existentes[datos.fecha_iso(existentes["fecha"]) == fecha_str]
+            h = cargar_horas_obra_fecha(id_obra, fecha_str)
             if h.empty:
-                st.caption("Todavía no hay horas cargadas.")
+                st.caption("Todavía no hay horas cargadas para este día.")
             else:
-                st.dataframe(h[["empleado", "entrada", "salida", "horas", "tarea", "cargado_por"]],
+                st.dataframe(h[["dni_empleado", "hora_inicio", "hora_fin", "cantidad_horas", "id_tarea_obra"]],
                              hide_index=True, use_container_width=True)
-                pendientes = h[(h["entrada"].astype(str).str.strip() != "") & (h["salida"].astype(str).str.strip() == "")]
-                c1, c2 = st.columns(2)
-                c1.metric("Total de horas", f"{datos.num(h['horas']).sum():g}")
-                c2.metric("Sin salida cargada", len(pendientes))
-                if len(pendientes):
-                    st.warning("Falta la salida de: " + ", ".join(pendientes["empleado"].astype(str)))
         except Exception as e:
-            st.caption(f"No pude leer las horas de esta obra: {e}")
+            st.caption(f"No se pudieron consultar los registros del día: {e}")

@@ -1,139 +1,49 @@
-"""Acceso centralizado a Google Sheets.
-
-Archivos globales (URLs en secrets, sección [archivos]): usuarios, empleados, obras.
-Cada obra tiene además su propio archivo (URL en la columna 'archivo' de la hoja Obras)
-con las pestañas Horas y Avances.
-"""
-import re
+"""Acceso centralizado a Google Cloud SQL (PostgreSQL) mediante SQLAlchemy."""
 from zoneinfo import ZoneInfo
-
 import pandas as pd
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
+from sqlalchemy import create_engine, text
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
-HOJA_EMPLEADOS = "Empleados"
-HOJA_OBRAS = "Obras"
-HOJA_HORAS = "Horas"
-HOJA_AVANCES = "Avances"
-
-COLUMNAS_HORAS = ["fecha", "obra_id", "obra", "DNI", "empleado", "entrada", "salida", "horas", "tarea", "cargado_por", "hora_actual"]
-COLUMNAS_AVANCES = ["fecha", "avance_pct", "tarea", "novedades", "cargado_por", "timestamp"]
-
 ESTADOS_OBRA_ACTIVA = ["activa", "en curso", "activo", ""]
 
+# ---------- Conexión a Base de Datos ----------
+def _get_engine():
+    """Crea y reutiliza el motor de conexión a PostgreSQL usando los secrets."""
+    cfg = st.secrets["postgres"]
+    url = f"postgresql://{cfg['user']}:{cfg['password']}@{cfg['host']}:{cfg['port']}/{cfg['database']}"
+    return create_engine(url)
 
-# ---------- Conexión ----------
-def _conn():
-    return st.connection("gsheets", type=GSheetsConnection)
+def leer_sql(query: str, params: dict = None) -> pd.DataFrame:
+    """Ejecuta una consulta SQL de lectura y devuelve un DataFrame."""
+    engine = _get_engine()
+    with engine.connect() as conn:
+        return pd.read_sql(text(query), conn, params=params)
 
+def ejecutar_sql(query: str, params: dict = None):
+    """Ejecuta una sentencia SQL de escritura, actualización o eliminación."""
+    engine = _get_engine()
+    with engine.begin() as conn:
+        conn.execute(text(query), params or {})
 
-def url_archivo(clave: str) -> str:
-    """URL del archivo de Google Sheets que contiene la hoja pedida.
-
-    Con un único Sheet (el modelo de la documentación) alcanza con 'spreadsheet' en
-    [connections.gsheets]. Si algún día se separan archivos, se pueden definir
-    en una sección [archivos] (usuarios, empleados, obras).
-    """
-    try:
-        return st.secrets["archivos"][clave]
-    except Exception:
-        pass
-    try:
-        return st.secrets["connections"]["gsheets"]["spreadsheet"]
-    except Exception:
-        raise RuntimeError("Falta la URL del Sheet: agregá 'spreadsheet' en [connections.gsheets] de los secrets.")
-
-
-_PESTANAS_OK: dict = {}
-
-
-def _candidatas(hoja: str) -> list:
-    """Nombres a probar para una pestaña: el recordado, el pedido, Capitalizado y minúscula."""
-    nombres = [_PESTANAS_OK.get((hoja.lower())), hoja, hoja.capitalize(), hoja.lower()]
-    vistos = []
-    for n in nombres:
-        if n and n not in vistos:
-            vistos.append(n)
-    return vistos
-
-
-def leer(url: str, hoja: str, ttl: int = 0) -> pd.DataFrame:
-    """Lee una pestaña; si el nombre difiere solo en mayúsculas ('usuarios' / 'Usuarios') lo encuentra solo."""
-    errores = []
-    for nombre in _candidatas(hoja):
-        try:
-            df = _conn().read(spreadsheet=url, worksheet=nombre, ttl=ttl)
-            _PESTANAS_OK[hoja.lower()] = nombre
-            df = df.dropna(how="all")
-            df.columns = [str(c).strip() for c in df.columns]
-            return df
-        except Exception as e:
-            errores.append(f"'{nombre}' -> {type(e).__name__}: {e}")
-            texto = str(e)
-            if "429" in texto or "RATE_LIMIT" in texto or "Quota exceeded" in texto:
-                # Límite de lecturas de Google: probar otros nombres solo gasta más cuota
-                raise RuntimeError(
-                    "Google limita las lecturas por minuto (60). Esperá 1 minuto y recargá la página (F5)."
-                ) from e
-    m = re.search(r"/d/([^/]+)", str(url))
-    fin = (m.group(1) if m else str(url))[-8:]
-    raise RuntimeError(
-        f"No pude leer la pestaña '{hoja}' del Sheet ...{fin} Detalle: {' | '.join(errores)}. "
-        f"Revisá que la URL sea del archivo que tiene esa pestaña."
-    )
-
-
-def escribir(url: str, hoja: str, df: pd.DataFrame) -> None:
-    nombre = _PESTANAS_OK.get(hoja.lower(), hoja)
-    _conn().update(spreadsheet=url, worksheet=nombre, data=df)
-    st.cache_data.clear()  # que la próxima lectura traiga lo recién guardado
-
-
-def leer_obra(url_obra: str, hoja: str, columnas: list[str]) -> pd.DataFrame:
-    """Lee una pestaña del archivo de una obra, asegurando que existan las columnas esperadas."""
-    df = leer(url_obra, hoja, ttl=30).fillna("")
-    for c in columnas:
-        if c not in df.columns:
-            df[c] = ""
-    return df
-
-
-# ---------- Catálogos ----------
+# ---------- Catálogos y Consultas ----------
 def obras_activas() -> pd.DataFrame:
-    df = leer(url_archivo("obras"), HOJA_OBRAS, ttl=300)
-    if "estado" in df.columns:
+    """Obtiene las obras desde la base de datos."""
+    query = "SELECT id, nombre_obra as nombre, ubicacion, estado FROM obras"
+    df = leer_sql(query)
+    if not df.empty and "estado" in df.columns:
         df = df[df["estado"].fillna("").astype(str).str.strip().str.lower().isin(ESTADOS_OBRA_ACTIVA)]
     return df
 
-
 def empleados_activos() -> pd.DataFrame:
-    df = leer(url_archivo("empleados"), HOJA_EMPLEADOS, ttl=300)
-    if "activo" in df.columns:
-        df = df[df["activo"].fillna("").astype(str).str.strip().str.lower().isin(["si", "sí", "true", "1", "x", "activo", ""])]
-    return df
+    """Obtiene los usuarios con rol operativo o general desde la base de datos."""
+    query = "SELECT id, dni, nombre, email, rol FROM usuarios"
+    return leer_sql(query)
 
-
-# ---------- Normalización (Sheets puede devolver fechas/números según el idioma de la planilla) ----------
-def _a_iso(v) -> str:
-    v = str(v).strip()
-    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", v)
-    if m:
-        return m.group(0)
-    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})", v)
-    if m:
-        return f"{m.group(3)}-{int(m.group(2)):02d}-{int(m.group(1)):02d}"
-    return v
-
-
-def fecha_iso(serie: pd.Series) -> pd.Series:
-    return serie.map(_a_iso)
-
+# ---------- Normalización y Utilidades ----------
+def dni_str(serie: pd.Series) -> pd.Series:
+    return serie.astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
 
 def num(serie: pd.Series) -> pd.Series:
     return pd.to_numeric(serie.astype(str).str.replace(",", ".", regex=False), errors="coerce")
-
-
-def dni_str(serie: pd.Series) -> pd.Series:
-    return serie.astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
