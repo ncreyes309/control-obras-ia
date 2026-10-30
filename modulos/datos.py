@@ -99,6 +99,15 @@ def crear_obra(empresa_id, nombre_obra, ubicacion, estado):
     except Exception as e:
         return False, f"Error al crear obra: {e}"
 
+def actualizar_estado_obra(obra_id, empresa_id, estado):
+    """Cambia el estado de una obra (activa, en curso, pausada, finalizada...)."""
+    query = "UPDATE obras SET estado = :estado WHERE id = :id AND empresa_id = :empresa_id"
+    try:
+        ejecutar_sql(query, {"estado": estado, "id": int(obra_id), "empresa_id": int(empresa_id)})
+        return True, f"Estado actualizado a '{estado}'."
+    except Exception as e:
+        return False, f"Error al actualizar la obra: {e}"
+
 # ---------- Módulo 3: Gestión de Tareas ----------
 def cargar_tareas(empresa_id: int) -> pd.DataFrame:
     """Obtiene todas las tareas para una empresa de PostgreSQL."""
@@ -125,6 +134,26 @@ def crear_tarea(empresa_id, nombre_tarea, descripcion):
             return False, f"La tarea '{nombre_tarea}' ya existe."
         return False, f"Error al crear tarea: {e}"
     
+def actualizar_tarea(tarea_id, empresa_id, nombre_tarea, descripcion):
+    """Edita el nombre y la descripción de una tarea existente."""
+    query = """
+    UPDATE tareas SET nombre_tarea = :nombre_tarea, descripcion = :descripcion
+    WHERE id = :id AND empresa_id = :empresa_id
+    """
+    params = {
+        "nombre_tarea": nombre_tarea,
+        "descripcion": descripcion,
+        "id": int(tarea_id),
+        "empresa_id": int(empresa_id),
+    }
+    try:
+        ejecutar_sql(query, params)
+        return True, f"Tarea '{nombre_tarea}' actualizada."
+    except Exception as e:
+        if "unique" in str(e).lower() and "nombre_tarea" in str(e).lower():
+            return False, f"Ya existe otra tarea llamada '{nombre_tarea}'."
+        return False, f"Error al actualizar la tarea: {e}"
+
 def empleados_activos() -> pd.DataFrame:
     """Obtiene los usuarios con rol operativo o general desde la base de datos."""
     query = "SELECT id, dni, nombre, email, rol FROM usuarios"
