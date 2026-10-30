@@ -77,7 +77,7 @@ def obras_activas() -> pd.DataFrame:
 
 def cargar_todas_obras(empresa_id: int) -> pd.DataFrame:
     """Obtiene todas las obras para una empresa de PostgreSQL."""
-    query = "SELECT id, nombre_obra, ubicacion, estado, created_at as fecha_creacion FROM obras WHERE empresa_id = :empresa_id"
+    query = "SELECT id, nombre_obra, ubicacion, estado FROM obras WHERE empresa_id = :empresa_id ORDER BY nombre_obra"
     params = {"empresa_id": empresa_id}
     return leer_sql(query, params=params)
 
@@ -111,20 +111,28 @@ def actualizar_estado_obra(obra_id, empresa_id, estado):
 # ---------- Módulo 3: Gestión de Tareas ----------
 def cargar_tareas(empresa_id: int) -> pd.DataFrame:
     """Obtiene todas las tareas para una empresa de PostgreSQL."""
-    query = "SELECT id, nombre_tarea, descripcion FROM tareas WHERE empresa_id = :empresa_id"
+    query = """
+    SELECT t.id, t.obra_id, o.nombre_obra AS obra, t.nombre_tarea, t.descripcion, t.estado
+    FROM tareas t
+    LEFT JOIN obras o ON o.id = t.obra_id
+    WHERE t.empresa_id = :empresa_id
+    ORDER BY o.nombre_obra, t.nombre_tarea
+    """
     params = {"empresa_id": empresa_id}
     return leer_sql(query, params=params)
 
-def crear_tarea(empresa_id, nombre_tarea, descripcion):
+def crear_tarea(empresa_id, nombre_tarea, descripcion, obra_id=None, estado="Pendiente"):
     """Crea una nueva tarea en PostgreSQL."""
     query = """
-    INSERT INTO tareas (empresa_id, nombre_tarea, descripcion)
-    VALUES (:empresa_id, :nombre_tarea, :descripcion);
+    INSERT INTO tareas (empresa_id, obra_id, nombre_tarea, descripcion, estado)
+    VALUES (:empresa_id, :obra_id, :nombre_tarea, :descripcion, :estado);
     """
     params = {
         "empresa_id": empresa_id,
+        "obra_id": int(obra_id) if obra_id is not None else None,
         "nombre_tarea": nombre_tarea,
-        "descripcion": descripcion
+        "descripcion": descripcion,
+        "estado": estado,
     }
     try:
         ejecutar_sql(query, params)
@@ -134,15 +142,17 @@ def crear_tarea(empresa_id, nombre_tarea, descripcion):
             return False, f"La tarea '{nombre_tarea}' ya existe."
         return False, f"Error al crear tarea: {e}"
     
-def actualizar_tarea(tarea_id, empresa_id, nombre_tarea, descripcion):
-    """Edita el nombre y la descripción de una tarea existente."""
+def actualizar_tarea(tarea_id, empresa_id, nombre_tarea, descripcion, estado=None):
+    """Edita nombre, descripción y estado de una tarea existente (estado=None lo deja igual)."""
     query = """
-    UPDATE tareas SET nombre_tarea = :nombre_tarea, descripcion = :descripcion
+    UPDATE tareas
+    SET nombre_tarea = :nombre_tarea, descripcion = :descripcion, estado = COALESCE(:estado, estado)
     WHERE id = :id AND empresa_id = :empresa_id
     """
     params = {
         "nombre_tarea": nombre_tarea,
         "descripcion": descripcion,
+        "estado": estado,
         "id": int(tarea_id),
         "empresa_id": int(empresa_id),
     }
