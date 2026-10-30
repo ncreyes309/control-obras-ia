@@ -2,7 +2,7 @@ import streamlit as st
 import auth
 
 # Importamos los submódulos de la carpeta 'modulos'
-from modulos import avances, horas, reportes, resumen, usuarios
+from modulos import avances, horas, obras, reportes, resumen, tareas, usuarios
 
 # Configuración inicial de la página
 st.set_page_config(
@@ -26,6 +26,8 @@ PAGINAS = {
     "📝 Avances y Novedades": (avances.mostrar_modulo, ROLES_CARGA),
     "📨 Reporte Diario": (reportes.mostrar_modulo, ROLES_GESTION),
     "📊 Resumen y Control": (resumen.mostrar_modulo, ROLES_GESTION),
+    "🏗️ Obras": (obras.mostrar_modulo, ROLES_GESTION),
+    "🧱 Tareas": (tareas.mostrar_modulo, ROLES_GESTION),
     "👤 Gestión de Usuarios": (usuarios.mostrar_modulo, ("Administrador",)),
 }
 opciones_menu = [nombre for nombre, (_, roles) in PAGINAS.items() if rol in roles]
