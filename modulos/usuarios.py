@@ -30,8 +30,8 @@ def mostrar_modulo():
             if not all(str(c).strip() for c in campos_obligatorios):
                 st.error("⚠️ Los campos marcados con * son obligatorios.")
             else:
-                # 1. Proteger la contraseña con bcrypt
-                password_hash = proteger_contraseña(nuevo_pass)
+                # 1. Proteger la contraseña con bcrypt --se cambioo
+                password_hash = auth.proteger_contraseña(nuevo_pass)
                 
                 # 2. Guardar en PostgreSQL
                 exito, msj = datos.crear_usuario(empresa_id, dni_val, apellido_val, nombre_val, email_val, nuevo_user, password_hash, nuevo_rol)

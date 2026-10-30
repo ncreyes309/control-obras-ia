@@ -119,6 +119,11 @@ def crear_tarea(empresa_id, nombre_tarea, descripcion):
         if "unique" in str(e).lower() and "nombre_tarea" in str(e).lower():
             return False, f"La tarea '{nombre_tarea}' ya existe."
         return False, f"Error al crear tarea: {e}"
+    
+def empleados_activos() -> pd.DataFrame:
+    """Obtiene los usuarios con rol operativo o general desde la base de datos."""
+    query = "SELECT id, dni, nombre, email, rol FROM usuarios"
+    return leer_sql(query)
 
 # ---------- Normalización y Utilidades ----------
 def dni_str(serie: pd.Series) -> pd.Series:
