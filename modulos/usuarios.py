@@ -1,6 +1,6 @@
 import streamlit as st
 import modulos.datos as datos
-from modulos.auth import proteger_contraseña # Importamos el hasheo desde auth
+import auth
 
 def mostrar_modulo():
     st.title("👤 Alta y Gestión de empleados (usuarios)")
