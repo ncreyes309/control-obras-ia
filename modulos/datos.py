@@ -12,7 +12,7 @@ ESTADOS_OBRA_ACTIVA = ["activa", "en curso", "activo", ""]
 def _get_engine():
     """Crea y reutiliza el motor de conexión a PostgreSQL usando los secrets."""
     cfg = st.secrets["postgres"]
-    url = f"postgresql://{cfg['user']}:{cfg['password']}@{cfg['host']}:{cfg['port']}/{cfg['database']}"
+    url = f"postgresql+psycopg2://{cfg['user']}:{cfg['password']}@{cfg['host']}:{cfg['port']}/{cfg['database']}"
     return create_engine(url)
 
 def leer_sql(query: str, params: dict = None) -> pd.DataFrame:
