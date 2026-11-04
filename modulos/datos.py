@@ -179,6 +179,126 @@ def empleados_activos() -> pd.DataFrame:
     query = "SELECT id, dni, nombre, email, rol FROM usuarios"
     return leer_sql(query)
 
+# ---------- Módulo 4: Empleados, categorías y asignaciones a obras ----------
+def cargar_categorias(empresa_id: int) -> pd.DataFrame:
+    """Categorías laborales con su valor hora."""
+    df = leer_sql(
+        "SELECT id, nombre, valor_hora, activo FROM categorias WHERE empresa_id = :e ORDER BY nombre",
+        {"e": int(empresa_id)},
+    )
+    df["valor_hora"] = pd.to_numeric(df["valor_hora"], errors="coerce")
+    return df
+
+def crear_categoria(empresa_id, nombre, valor_hora):
+    query = "INSERT INTO categorias (empresa_id, nombre, valor_hora) VALUES (:e, :nombre, :valor)"
+    try:
+        ejecutar_sql(query, {"e": int(empresa_id), "nombre": nombre, "valor": float(valor_hora)})
+        return True, f"Categoría '{nombre}' creada."
+    except Exception as e:
+        if "unique" in str(e).lower():
+            return False, f"La categoría '{nombre}' ya existe."
+        return False, f"Error al crear la categoría: {e}"
+
+def actualizar_categoria(cat_id, empresa_id, nombre, valor_hora, activo):
+    query = """
+    UPDATE categorias SET nombre = :nombre, valor_hora = :valor, activo = :activo
+    WHERE id = :id AND empresa_id = :e
+    """
+    try:
+        ejecutar_sql(query, {"nombre": nombre, "valor": float(valor_hora), "activo": bool(activo),
+                             "id": int(cat_id), "e": int(empresa_id)})
+        return True, f"Categoría '{nombre}' actualizada."
+    except Exception as e:
+        if "unique" in str(e).lower():
+            return False, f"Ya existe otra categoría llamada '{nombre}'."
+        return False, f"Error al actualizar la categoría: {e}"
+
+def cargar_empleados(empresa_id: int) -> pd.DataFrame:
+    query = """
+    SELECT e.id, e.dni, e.cuil, e.apellido, e.nombre, e.categoria_id,
+           c.nombre AS categoria, c.valor_hora, e.telefono, e.fecha_ingreso, e.activo
+    FROM empleados e
+    LEFT JOIN categorias c ON c.id = e.categoria_id
+    WHERE e.empresa_id = :e
+    ORDER BY e.apellido, e.nombre
+    """
+    df = leer_sql(query, {"e": int(empresa_id)})
+    df["valor_hora"] = pd.to_numeric(df["valor_hora"], errors="coerce")
+    return df
+
+def crear_empleado(empresa_id, dni, cuil, apellido, nombre, categoria_id, telefono, fecha_ingreso):
+    query = """
+    INSERT INTO empleados (empresa_id, dni, cuil, apellido, nombre, categoria_id, telefono, fecha_ingreso)
+    VALUES (:e, :dni, :cuil, :apellido, :nombre, :categoria_id, :telefono, :fecha_ingreso)
+    """
+    params = {
+        "e": int(empresa_id), "dni": dni, "cuil": cuil or None, "apellido": apellido, "nombre": nombre,
+        "categoria_id": int(categoria_id) if categoria_id is not None else None,
+        "telefono": telefono or None, "fecha_ingreso": fecha_ingreso,
+    }
+    try:
+        ejecutar_sql(query, params)
+        return True, f"Empleado {apellido}, {nombre} registrado."
+    except Exception as e:
+        if "unique" in str(e).lower():
+            return False, f"Ya existe un empleado con el DNI '{dni}'."
+        return False, f"Error al crear el empleado: {e}"
+
+def actualizar_empleado(emp_id, empresa_id, cuil, apellido, nombre, categoria_id, telefono, activo):
+    query = """
+    UPDATE empleados
+    SET cuil = :cuil, apellido = :apellido, nombre = :nombre, categoria_id = :categoria_id,
+        telefono = :telefono, activo = :activo
+    WHERE id = :id AND empresa_id = :e
+    """
+    params = {
+        "cuil": cuil or None, "apellido": apellido, "nombre": nombre,
+        "categoria_id": int(categoria_id) if categoria_id is not None else None,
+        "telefono": telefono or None, "activo": bool(activo),
+        "id": int(emp_id), "e": int(empresa_id),
+    }
+    try:
+        ejecutar_sql(query, params)
+        return True, f"Empleado {apellido}, {nombre} actualizado."
+    except Exception as e:
+        return False, f"Error al actualizar el empleado: {e}"
+
+def cargar_asignaciones(empresa_id: int) -> pd.DataFrame:
+    """Asignaciones de empleados a obras (vigentes e históricas)."""
+    query = """
+    SELECT a.id, a.empleado_id, a.obra_id, e.dni, e.apellido, e.nombre,
+           o.nombre_obra AS obra, a.fecha_desde, a.fecha_hasta
+    FROM empleado_obra a
+    JOIN empleados e ON e.id = a.empleado_id
+    JOIN obras o ON o.id = a.obra_id
+    WHERE e.empresa_id = :e
+    ORDER BY o.nombre_obra, e.apellido, e.nombre
+    """
+    return leer_sql(query, {"e": int(empresa_id)})
+
+def asignar_empleado_obra(empleado_id, obra_id, fecha_desde):
+    query = "INSERT INTO empleado_obra (empleado_id, obra_id, fecha_desde) VALUES (:emp, :obra, :desde)"
+    try:
+        ejecutar_sql(query, {"emp": int(empleado_id), "obra": int(obra_id), "desde": fecha_desde})
+        return True, "Asignación creada."
+    except Exception as e:
+        if "unique" in str(e).lower():
+            return False, "El empleado ya está asignado a esa obra."
+        return False, f"Error al asignar: {e}"
+
+def cerrar_asignacion(asignacion_id, empresa_id, fecha_hasta):
+    query = """
+    UPDATE empleado_obra SET fecha_hasta = :hasta
+    WHERE id = :id AND empleado_id IN (SELECT id FROM empleados WHERE empresa_id = :e)
+    """
+    try:
+        ejecutar_sql(query, {"hasta": fecha_hasta, "id": int(asignacion_id), "e": int(empresa_id)})
+        return True, "Asignación finalizada."
+    except Exception as e:
+        if "check" in str(e).lower():
+            return False, "La fecha de fin no puede ser anterior a la de inicio."
+        return False, f"Error al finalizar la asignación: {e}"
+
 # ---------- Normalización y Utilidades ----------
 def dni_str(serie: pd.Series) -> pd.Series:
     return serie.astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
