@@ -299,6 +299,77 @@ def cerrar_asignacion(asignacion_id, empresa_id, fecha_hasta):
             return False, "La fecha de fin no puede ser anterior a la de inicio."
         return False, f"Error al finalizar la asignación: {e}"
 
+# ---------- Módulo 5: Planificación diaria de personal ----------
+def cargar_planificacion(empresa_id: int, fecha) -> pd.DataFrame:
+    """Personal planificado en TODAS las obras para una fecha."""
+    query = """
+    SELECT p.id, p.fecha, p.obra_id, o.nombre_obra AS obra, p.empleado_id,
+           e.dni, e.apellido, e.nombre
+    FROM planificacion_diaria p
+    JOIN empleados e ON e.id = p.empleado_id
+    JOIN obras o ON o.id = p.obra_id
+    WHERE p.fecha = :fecha AND e.empresa_id = :e
+    ORDER BY o.nombre_obra, e.apellido, e.nombre
+    """
+    return leer_sql(query, {"fecha": fecha, "e": int(empresa_id)})
+
+def planificar_dia(empresa_id, fecha, obra_id, empleado_ids):
+    """Deja exactamente a `empleado_ids` planificados en esa obra y fecha (altas y bajas, en una transacción)."""
+    ids = [int(i) for i in empleado_ids]
+    params = {"fecha": fecha, "obra": int(obra_id), "e": int(empresa_id), "ids": ids}
+    try:
+        engine = _get_engine()
+        with engine.begin() as conn:
+            conn.execute(text("""
+                DELETE FROM planificacion_diaria p USING empleados e
+                WHERE p.empleado_id = e.id AND e.empresa_id = :e
+                  AND p.fecha = :fecha AND p.obra_id = :obra
+                  AND NOT (p.empleado_id = ANY(:ids))
+            """), params)
+            if ids:
+                conn.execute(text("""
+                    INSERT INTO planificacion_diaria (fecha, obra_id, empleado_id)
+                    SELECT :fecha, :obra, e.id FROM empleados e
+                    WHERE e.id = ANY(:ids) AND e.empresa_id = :e AND e.activo
+                    ON CONFLICT DO NOTHING
+                """), params)
+        return True, f"Planificación guardada ({len(ids)} empleado(s))."
+    except Exception as e:
+        return False, f"Error al guardar la planificación: {e}"
+
+def copiar_planificacion(empresa_id, fecha_origen, fecha_destino):
+    """Copia la planificación de un día a otro (suma a lo que ya haya, sin duplicar)."""
+    query = """
+    INSERT INTO planificacion_diaria (fecha, obra_id, empleado_id)
+    SELECT :destino, p.obra_id, p.empleado_id
+    FROM planificacion_diaria p
+    JOIN empleados e ON e.id = p.empleado_id
+    WHERE p.fecha = :origen AND e.empresa_id = :e AND e.activo
+    ON CONFLICT DO NOTHING
+    """
+    try:
+        engine = _get_engine()
+        with engine.begin() as conn:
+            res = conn.execute(text(query), {"origen": fecha_origen, "destino": fecha_destino, "e": int(empresa_id)})
+        return True, f"Se copiaron {res.rowcount} asignación(es)."
+    except Exception as e:
+        return False, f"Error al copiar la planificación: {e}"
+
+def empleados_planificados(empresa_id: int, obra_id: int, fecha) -> pd.DataFrame:
+    """Empleados activos planificados en una obra para una fecha (los que se ven en Carga de Horas)."""
+    query = """
+    SELECT e.id, e.dni, e.apellido, e.nombre, c.nombre AS categoria
+    FROM planificacion_diaria p
+    JOIN empleados e ON e.id = p.empleado_id
+    LEFT JOIN categorias c ON c.id = e.categoria_id
+    WHERE p.fecha = :fecha AND p.obra_id = :obra AND e.empresa_id = :e AND e.activo
+    ORDER BY e.apellido, e.nombre
+    """
+    df = leer_sql(query, {"fecha": fecha, "obra": int(obra_id), "e": int(empresa_id)})
+    if not df.empty:
+        df["dni"] = dni_str(df["dni"])
+    return df
+
 # ---------- Normalización y Utilidades ----------
 def dni_str(serie: pd.Series) -> pd.Series:
     return serie.astype(str).str.strip().str.replace(r"\.0$", "", regex=True)

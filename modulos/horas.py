@@ -6,6 +6,8 @@ import streamlit as st
 
 from modulos import datos
 
+SIN_TAREA = "General"
+
 
 def _a_hora(valor):
     """time, datetime/Timestamp o texto ('07:30', '7:30:00') -> datetime.time o None."""
@@ -26,8 +28,18 @@ def _a_hora(valor):
     return None
 
 
+def _hora_dato(valor):
+    """Hora guardada en la base: 00:00 significa 'todavía sin cargar'."""
+    h = _a_hora(valor)
+    return None if h == time(0, 0) else h
+
+
 def _texto(hora) -> str:
     return hora.strftime("%H:%M") if hora else ""
+
+
+def _s(valor) -> str:
+    return "" if valor is None or (not isinstance(valor, str) and pd.isna(valor)) else str(valor)
 
 
 def _horas_trabajadas(entrada, salida):
@@ -41,7 +53,7 @@ def _horas_trabajadas(entrada, salida):
 def cargar_horas_obra_fecha(id_obra: str, fecha_str: str) -> pd.DataFrame:
     """Consulta los registros de horas desde PostgreSQL para una obra y fecha dada."""
     query = """
-        SELECT id_registro, dni_empleado, id_obra, id_tarea_obra, fecha, 
+        SELECT id_registro, dni_empleado, id_obra, id_tarea_obra, fecha,
                hora_inicio, hora_fin, cantidad_horas, fecha_carga
         FROM horas
         WHERE id_obra = :id_obra AND fecha = :fecha
@@ -49,13 +61,24 @@ def cargar_horas_obra_fecha(id_obra: str, fecha_str: str) -> pd.DataFrame:
     return datos.leer_sql(query, {"id_obra": str(id_obra), "fecha": fecha_str})
 
 
+def _horas_otras_obras(dnis, id_obra: str, fecha_str: str) -> pd.DataFrame:
+    """Horas del mismo día de estos empleados en OTRAS obras (para evitar superposiciones)."""
+    if not dnis:
+        return pd.DataFrame(columns=["dni_empleado", "id_obra", "hora_inicio", "hora_fin"])
+    query = """
+        SELECT dni_empleado, id_obra, hora_inicio, hora_fin FROM horas
+        WHERE fecha = :fecha AND id_obra <> :id_obra AND dni_empleado = ANY(:dnis)
+    """
+    return datos.leer_sql(query, {"fecha": fecha_str, "id_obra": str(id_obra), "dnis": list(dnis)})
+
+
 def guardar_registro_hora(registro: dict):
     """Inserta o actualiza un registro de horas en la base de datos PostgreSQL."""
     query = """
         INSERT INTO horas (id_registro, dni_empleado, id_obra, id_tarea_obra, fecha, hora_inicio, hora_fin, cantidad_horas, fecha_carga)
         VALUES (:id_registro, :dni_empleado, :id_obra, :id_tarea_obra, :fecha, :hora_inicio, :hora_fin, :cantidad_horas, :fecha_carga)
-        ON CONFLICT (id_registro) 
-        DO UPDATE SET 
+        ON CONFLICT (id_registro)
+        DO UPDATE SET
             hora_inicio = EXCLUDED.hora_inicio,
             hora_fin = EXCLUDED.hora_fin,
             cantidad_horas = EXCLUDED.cantidad_horas,
@@ -68,31 +91,55 @@ def guardar_registro_hora(registro: dict):
 def mostrar_modulo():
     st.title("🕒 Carga de Horas")
 
+    empresa_id = datos.empresa_actual()
+
+    flash = st.session_state.pop("_flash_horas", None)
+    if flash:
+        st.success(flash)
+
     try:
-        empleados = datos.empleados_activos()
-        obras = datos.obras_activas()
+        obras_todas = datos.cargar_todas_obras(empresa_id)
+        df_emp_todos = datos.cargar_empleados(empresa_id)
+        df_tareas = datos.cargar_tareas(empresa_id)
     except Exception as e:
-        st.error(f"No pude leer los datos de Empleados u Obras desde PostgreSQL: {e}")
+        st.error(f"No pude leer los datos de Obras, Empleados o Tareas desde PostgreSQL: {e}")
         return
 
-    if obras.empty or empleados.empty:
-        st.warning("Necesitás al menos una obra activa y un empleado activo cargados.")
+    obras = obras_todas
+    if not obras.empty:
+        obras = obras[obras["estado"].fillna("").astype(str).str.strip().str.lower().isin(datos.ESTADOS_OBRA_ACTIVA)]
+    if obras.empty:
+        st.warning("Necesitás al menos una obra activa.")
         return
+    if df_emp_todos.empty:
+        st.warning("Todavía no hay empleados cargados. Cargalos en el módulo 👷 Empleados.")
+        return
+
+    df_emp_todos = df_emp_todos.copy()
+    df_emp_todos["dni"] = datos.dni_str(df_emp_todos["dni"])
+    emp_por_dni = {
+        r.dni: (f"{r.apellido}, {r.nombre}", _s(r.categoria)) for r in df_emp_todos.itertuples()
+    }
+    activos = df_emp_todos[df_emp_todos["activo"] == True]  # noqa: E712
 
     col1, col2 = st.columns(2)
     with col1:
-        obra_nombre = st.selectbox("Obra", obras["nombre"].tolist())
+        obra_nombre = st.selectbox("Obra", obras["nombre_obra"].tolist())
     with col2:
         fecha = st.date_input("Fecha", value=datetime.now(datos.TZ).date(), format="DD/MM/YYYY")
     fecha_str = fecha.strftime("%Y-%m-%d")
 
-    obra_row = obras[obras["nombre"] == obra_nombre].iloc[0]
-    id_obra = str(obra_row.get("id", obra_row.get("id_obra", obra_nombre)))
+    obra_id = int(obras[obras["nombre_obra"] == obra_nombre].iloc[0]["id"])
+    id_obra = str(obra_id)
 
     try:
         existentes = cargar_horas_obra_fecha(id_obra, fecha_str)
+        planificados = datos.empleados_planificados(empresa_id, obra_id, fecha_str)
     except Exception as e:
-        st.error(f"Error al consultar horas registradas en PostgreSQL: {e}")
+        st.error(
+            "Error al consultar la planificación o las horas. ¿Ya ejecutaste "
+            f"`crear_tabla_planificacion.sql`?\n\nDetalle: {e}"
+        )
         return
 
     previo = {
@@ -100,16 +147,60 @@ def mostrar_modulo():
         for _, r in existentes.iterrows()
     } if not existentes.empty else {}
 
+    # Personal de la grilla: planificado ese día + quien ya tenga horas cargadas
+    personal = {str(r.dni): (f"{r.apellido}, {r.nombre}", _s(r.categoria)) for r in planificados.itertuples()}
+    for dni in previo:
+        if dni not in personal:
+            personal[dni] = emp_por_dni.get(dni, (dni, ""))
+
+    # Empleados que no estaban planificados pero hoy sí trabajaron en esta obra
+    disponibles = {
+        f"{r.apellido}, {r.nombre} (DNI {r.dni})": r.dni
+        for r in activos.itertuples() if r.dni not in personal
+    }
+    extras = st.multiselect(
+        "➕ Agregar empleados que no estaban planificados en esta obra hoy",
+        list(disponibles.keys()),
+        key=f"extras_{id_obra}_{fecha_str}",
+    )
+    for etiqueta in extras:
+        dni = disponibles[etiqueta]
+        personal[dni] = emp_por_dni[dni]
+
+    if not personal:
+        st.info(
+            "No hay personal planificado para esta obra en esta fecha. Planificalo en "
+            "**📅 Planificación** o agregalo arriba."
+        )
+        return
+
+    # Tareas de la obra
+    t_obra = df_tareas[df_tareas["obra_id"] == obra_id] if not df_tareas.empty else df_tareas
+    id_a_label = {str(int(r.id)): str(r.nombre_tarea) for r in t_obra.itertuples()}
+    label_a_id = {v: k for k, v in id_a_label.items()}
+    opciones_tarea = [SIN_TAREA] + [
+        str(r.nombre_tarea) for r in t_obra.itertuples() if _s(r.estado).strip().lower() != "finalizada"
+    ]
+
+    def _label_tarea(valor):
+        v = _s(valor).strip()
+        if not v:
+            return None
+        label = id_a_label.get(v, v)
+        if label not in opciones_tarea:
+            opciones_tarea.append(label)
+        return label
+
     filas = []
-    for _, e in empleados.iterrows():
-        dni_empleado = datos.dni_str(pd.Series([e.get("dni", e.get("DNI", ""))])).iloc[0]
-        p = previo.get(dni_empleado)
+    for dni, (nombre, categoria) in personal.items():
+        p = previo.get(dni)
         filas.append({
-            "DNI": dni_empleado,
-            "Empleado": f"{e.get('nombre', '')}",
-            "Entrada": _a_hora(p["hora_inicio"]) if p is not None else None,
-            "Salida": _a_hora(p["hora_fin"]) if p is not None else None,
-            "Tarea": str(p["id_tarea_obra"]) if p is not None and p["id_tarea_obra"] else "",
+            "DNI": dni,
+            "Empleado": nombre,
+            "Categoría": categoria,
+            "Entrada": _hora_dato(p["hora_inicio"]) if p is not None else None,
+            "Salida": _hora_dato(p["hora_fin"]) if p is not None else None,
+            "Tarea": _label_tarea(p["id_tarea_obra"]) if p is not None else None,
         })
     base = pd.DataFrame(filas)
 
@@ -121,13 +212,13 @@ def mostrar_modulo():
         base,
         hide_index=True,
         use_container_width=True,
-        disabled=["DNI", "Empleado"],
+        disabled=["DNI", "Empleado", "Categoría"],
         column_config={
             "Entrada": st.column_config.TimeColumn("Entrada", format="HH:mm", step=60),
             "Salida": st.column_config.TimeColumn("Salida", format="HH:mm", step=60),
-            "Tarea": st.column_config.TextColumn("Tarea / novedad"),
+            "Tarea": st.column_config.SelectboxColumn("Tarea", options=opciones_tarea, required=False),
         },
-        key=f"editor_horas_{id_obra}_{fecha_str}",
+        key=f"editor_horas_{id_obra}_{fecha_str}_{hash(tuple(sorted(personal)))}",
     )
 
     if st.button("💾 Guardar en Cloud SQL", type="primary"):
@@ -146,6 +237,29 @@ def mostrar_modulo():
                 errores.append(f"{r['Empleado']}: tiene salida pero falta la entrada.")
             elif ent and sal and sal <= ent:
                 errores.append(f"{r['Empleado']}: la salida ({_texto(sal)}) debe ser posterior a la entrada ({_texto(ent)}).")
+
+        # Un empleado puede estar en varias obras el mismo día, pero no a la misma hora
+        if not errores:
+            try:
+                otras = _horas_otras_obras([str(d) for d in a_guardar["DNI"]], id_obra, fecha_str)
+                nombre_obra_por_id = dict(zip(obras_todas["id"].astype(str), obras_todas["nombre_obra"]))
+                for _, r in a_guardar.iterrows():
+                    ent, sal = _a_hora(r["Entrada"]), _a_hora(r["Salida"])
+                    if not (ent and sal):
+                        continue
+                    ajenas = otras[otras["dni_empleado"].astype(str) == str(r["DNI"])]
+                    for _, o in ajenas.iterrows():
+                        o_ini, o_fin = _a_hora(o["hora_inicio"]), _a_hora(o["hora_fin"])
+                        if o_ini and o_fin and o_fin > o_ini and ent < o_fin and sal > o_ini:
+                            otra_obra = nombre_obra_por_id.get(str(o["id_obra"]), f"obra #{o['id_obra']}")
+                            errores.append(
+                                f"{r['Empleado']}: el horario {_texto(ent)}-{_texto(sal)} se superpone con "
+                                f"{_texto(o_ini)}-{_texto(o_fin)} en {otra_obra}."
+                            )
+            except Exception as e:
+                st.error(f"No pude verificar superposiciones con otras obras: {e}")
+                return
+
         if errores:
             for m in errores:
                 st.error(m)
@@ -161,11 +275,14 @@ def mostrar_modulo():
                 dni_emp = str(r["DNI"])
                 id_reg = f"H-{id_obra}-{dni_emp}-{fecha_str}"
 
+                label = _s(r["Tarea"]).strip()
+                id_tarea = label_a_id.get(label, label) if label else SIN_TAREA
+
                 registro = {
                     "id_registro": id_reg,
                     "dni_empleado": dni_emp,
                     "id_obra": id_obra,
-                    "id_tarea_obra": str(r["Tarea"]) if r["Tarea"] else "General",
+                    "id_tarea_obra": id_tarea,
                     "fecha": fecha_str,
                     "hora_inicio": ent if ent else time(0, 0),
                     "hora_fin": sal if sal else time(0, 0),
@@ -175,7 +292,7 @@ def mostrar_modulo():
                 guardar_registro_hora(registro)
                 guardados += 1
 
-            st.success(f" Se guardaron/actualizaron {guardados} registros en Google Cloud SQL para {obra_nombre}.")
+            st.session_state["_flash_horas"] = f"✅ Se guardaron/actualizaron {guardados} registros para {obra_nombre}."
             st.rerun()
         except Exception as e:
             st.error(f"Error al guardar en la base de datos: {e}")
@@ -186,7 +303,13 @@ def mostrar_modulo():
             if h.empty:
                 st.caption("Todavía no hay horas cargadas para este día.")
             else:
-                st.dataframe(h[["dni_empleado", "hora_inicio", "hora_fin", "cantidad_horas", "id_tarea_obra"]],
-                             hide_index=True, use_container_width=True)
+                h = h.copy()
+                h["dni_empleado"] = datos.dni_str(h["dni_empleado"])
+                h["Empleado"] = h["dni_empleado"].map(lambda d: emp_por_dni.get(d, (d, ""))[0])
+                h["Tarea"] = h["id_tarea_obra"].map(lambda v: id_a_label.get(_s(v), _s(v)))
+                st.dataframe(
+                    h[["dni_empleado", "Empleado", "hora_inicio", "hora_fin", "cantidad_horas", "Tarea"]],
+                    hide_index=True, use_container_width=True,
+                )
         except Exception as e:
             st.caption(f"No se pudieron consultar los registros del día: {e}")
